@@ -1,0 +1,57 @@
+{
+  "name": "@template/api",
+  "main": "src/index.js",
+  "types": "src/types.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --watch src/index.ts",
+    "build": "tsup",
+    "start": "node src/index.js",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx}\"",
+    "check": "prettier --check \"**/*.{ts,tsx,js,jsx}\"",
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx src/db/seed.ts",
+    "reset": "tsx src/db/reset.ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/types.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1073.0",
+    "@aws-sdk/s3-request-presigner": "^3.1073.0",
+    "@better-auth/drizzle-adapter": "1.7.0-rc.1",
+    "@better-auth/expo": "^1.6.23",
+    "@template/shared": "workspace:*",
+    "@fastify/cors": "^11.2.0",
+    "@trpc/server": "^11.18.0",
+    "better-auth": "1.7.0-rc.1",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "1.0.0-rc.4",
+    "drizzle-seed": "1.0.0-rc.4",
+    "expo-server-sdk": "^6.1.0",
+    "fastify": "^5.8.5",
+    "fastify-type-provider-zod": "^6.1.0",
+    "nodemailer": "^9.0.3",
+    "pg": "^8.21.0",
+    "pg-boss": "^12.26.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/nodemailer": "^8.0.1",
+    "@types/pg": "^8.20.0",
+    "drizzle-kit": "1.0.0-rc.4",
+    "tsup": "^8.5.1",
+    "tsx": "^4.22.3",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.9"
+  }
+}

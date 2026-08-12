@@ -1,0 +1,23 @@
+{
+  "name": "@template/shared",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx}\"",
+    "check": "prettier --check \"**/*.{ts,tsx,js,jsx}\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./assets/*": "./assets/*"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.9"
+  }
+}

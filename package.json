@@ -1,0 +1,39 @@
+{
+  "name": "template",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "docker compose -f docker/docker-compose.yml up",
+    "stop": "docker compose -f docker/docker-compose.yml down",
+    "prepare": "husky",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "format": "pnpm -r format",
+    "check": "pnpm -r check",
+    "typecheck": "pnpm -r typecheck",
+    "dev": "./dev.sh"
+  },
+  "lint-staged": {
+    "apps/mobile/**/*.{js,jsx,ts,tsx}": "pnpm --filter @template/mobile exec eslint --fix",
+    "apps/web/**/*.{js,jsx,ts,tsx}": "pnpm --filter @template/web exec eslint --fix",
+    "packages/**/*.{js,jsx,ts,tsx,mjs,mts,cjs,cts}": "eslint --fix",
+    "**/*": "prettier --write --ignore-unknown"
+  },
+  "packageManager": "pnpm@10.25.0",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/parser": "^8.62.1",
+    "eslint": "^9.39.4",
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "eslint-plugin-import-x": "^4.17.1",
+    "globals": "^17.7.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "prettier": "^3.8.4",
+    "typescript-eslint": "^8.62.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": "0.28.0"
+    }
+  }
+}
