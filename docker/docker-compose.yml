@@ -1,4 +1,4 @@
-name: template
+name: budget
 services:
   database:
     image: postgres:16

@@ -49,7 +49,7 @@ export const auth = betterAuth({
       },
     }),
   ],
-  trustedOrigins: ["com.sigh10.template://"],
+  trustedOrigins: ["com.sigh10.budget://"],
   advanced: {
     database: {
       generateId: "uuid",

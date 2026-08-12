@@ -3,18 +3,18 @@ import "dotenv/config";
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: "template",
-  slug: "template",
+  name: "budget",
+  slug: "budget",
   version: "1.0.0",
   owner: "sigh10",
   orientation: "portrait",
   icon: "../../packages/shared/assets/images/icon.png",
-  scheme: "com.sigh10.template",
+  scheme: "com.sigh10.budget",
   userInterfaceStyle: "automatic",
   platforms: ["ios", "android"],
   ios: {
     supportsTablet: true,
-    bundleIdentifier: "com.sigh10.template",
+    bundleIdentifier: "com.sigh10.budget",
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
     },
@@ -30,7 +30,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         "../../packages/shared/assets/images/android-icon-monochrome.png",
     },
     predictiveBackGestureEnabled: false,
-    package: "com.sigh10.template",
+    package: "com.sigh10.budget",
     // Android push delivery needs an FCM config: add google-services.json here
     // and re-enable this line.
     // googleServicesFile: "./google-services.json",

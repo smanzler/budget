@@ -4,9 +4,9 @@ SESSION=$(tmux display-message -p '#S')
 CURRENT_WINDOW=$(tmux display-message -p '#I')
 
 CMD1="pnpm start"
-CMD2="pnpm --filter @template/api dev"
-CMD3="pnpm --filter @template/mobile dev"
-CMD4="pnpm --filter @template/web dev"
+CMD2="pnpm --filter @budget/api dev"
+CMD3="pnpm --filter @budget/mobile dev"
+CMD4="pnpm --filter @budget/web dev"
 
 PANE1=$(tmux display-message -p '#{pane_id}')
 PANE2=$(tmux split-window -v -t "$PANE1" -P -F "#{pane_id}")

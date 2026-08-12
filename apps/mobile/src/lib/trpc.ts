@@ -1,5 +1,5 @@
 import { createTRPCContext } from "@trpc/tanstack-react-query";
-import { type AppRouter } from "@template/api";
+import { type AppRouter } from "@budget/api";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { authClient } from "./auth-client";
 import { env } from "@/env";

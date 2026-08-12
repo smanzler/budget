@@ -20,7 +20,7 @@ export const envSchema = z.object({
   SMTP_SECURE: z.coerce.boolean().default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
-  SMTP_FROM: z.string().default("Template <noreply@template.local>"),
+  SMTP_FROM: z.string().default("Budget <noreply@budget.local>"),
 
   EXPO_ACCESS_TOKEN: z.string().optional(),
 });

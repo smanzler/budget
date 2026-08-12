@@ -1,5 +1,5 @@
 {
-  "name": "@template/mobile",
+  "name": "@budget/mobile",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@better-auth/expo": "^1.6.23",
-    "@template/shared": "workspace:*",
+    "@budget/shared": "workspace:*",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@rn-primitives/avatar": "^1.2.0",
@@ -75,7 +75,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
-    "@template/api": "workspace:*",
+    "@budget/api": "workspace:*",
     "@testing-library/react-native": "^14.0.1",
     "@types/jest": "29.5.14",
     "@types/react": "~19.2.14",

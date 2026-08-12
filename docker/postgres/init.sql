@@ -1,2 +1,2 @@
-CREATE USER template WITH PASSWORD 'template';
-CREATE DATABASE template OWNER template;
+CREATE USER budget WITH PASSWORD 'budget';
+CREATE DATABASE budget OWNER budget;

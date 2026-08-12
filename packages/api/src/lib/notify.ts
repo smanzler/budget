@@ -8,7 +8,7 @@ import {
 import {
   notificationPayloadSchema,
   type NotificationPayload,
-} from "@template/shared";
+} from "@budget/shared";
 import { boss } from "./boss";
 
 const renderNotification = (
@@ -17,7 +17,7 @@ const renderNotification = (
   switch (payload.type) {
     case "system_message":
       return {
-        title: "Template",
+        title: "Budget",
         body: payload.data.message,
       };
   }
