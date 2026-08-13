@@ -56,9 +56,11 @@ function SectionContent({
 }: ViewProps & React.RefAttributes<View>) {
   const count = React.Children.count(children);
   return (
+    // No `border` here — each item draws its own edges so that a row is
+    // self-sufficient and works in a virtualized list too. See SectionItem.
     <View
       className={cn(
-        "bg-card border-border flex flex-col rounded-xl border shadow-sm shadow-black/5 overflow-hidden",
+        "bg-card flex flex-col rounded-xl shadow-sm shadow-black/5 overflow-hidden",
         className,
       )}
       {...props}
@@ -66,8 +68,12 @@ function SectionContent({
       {React.Children.map(children, (child, index) =>
         React.isValidElement(child) && child.type === SectionItem
           ? React.cloneElement(
-              child as React.ReactElement<{ isLast?: boolean }>,
+              child as React.ReactElement<{
+                isFirst?: boolean;
+                isLast?: boolean;
+              }>,
               {
+                isFirst: index === 0,
                 isLast: index === count - 1,
               },
             )
@@ -77,21 +83,34 @@ function SectionContent({
   );
 }
 
+/**
+ * A row in a card.
+ *
+ * The edge geometry lives here rather than on a wrapping container so the row
+ * is self-contained: `SectionContent` derives `isFirst`/`isLast` by mapping over
+ * its children, but a virtualized list (which never has all rows at once) can
+ * pass the same flags per item and get an identical card.
+ */
 function SectionItem({
   className,
+  isFirst,
   isLast,
   onPress,
   ...viewProps
 }: ViewProps &
   React.RefAttributes<View> & {
     onPress?: () => void;
+    isFirst?: boolean;
     isLast?: boolean;
   }) {
   const content = (
     <View
       className={cn(
-        "flex-row gap-3 h-11 px-3 items-center",
-        isLast !== true && "border-b border-border",
+        "bg-card border-border flex-row gap-3 h-11 px-3 items-center border-x",
+        isFirst === true && "rounded-t-xl border-t",
+        // The last row closes the card; every other row's bottom edge is the
+        // separator between it and the next one.
+        isLast === true ? "rounded-b-xl border-b" : "border-b",
         className,
       )}
       {...viewProps}

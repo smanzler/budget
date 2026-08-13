@@ -1,0 +1,32 @@
+import { Text } from "@/components/ui/text";
+import { View } from "react-native";
+import { formatTransactionAmount } from "../lib/format";
+import type { TransactionSection } from "../lib/group";
+
+/**
+ * Sticky, so it needs an opaque background — rows scroll underneath it.
+ */
+export function TransactionDayHeader({
+  section,
+}: {
+  section: TransactionSection;
+}) {
+  // The day's net, run through the same sign interpretation as a row.
+  const { text, isInflow } = formatTransactionAmount(
+    String(section.total),
+    section.currency,
+  );
+
+  return (
+    <View className="bg-background flex-row items-baseline justify-between px-1 pb-2 pt-4">
+      <Text className="text-muted-foreground text-sm font-medium">
+        {section.title}
+      </Text>
+      {section.total !== 0 ? (
+        <Text className="text-muted-foreground text-xs tabular-nums">
+          {isInflow ? text : `−${text}`}
+        </Text>
+      ) : null}
+    </View>
+  );
+}

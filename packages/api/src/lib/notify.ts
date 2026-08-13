@@ -20,6 +20,11 @@ const renderNotification = (
         title: "Budget",
         body: payload.data.message,
       };
+    case "bank_login_required":
+      return {
+        title: payload.data.institutionName ?? "Bank connection expired",
+        body: "Reconnect to keep your transactions up to date.",
+      };
   }
 };
 

@@ -24,4 +24,38 @@ export const relations = defineRelations(schema, (r) => ({
       to: r.users.id,
     }),
   },
+  PlaidItems: {
+    user: r.one.users({
+      from: r.PlaidItems.userId,
+      to: r.users.id,
+    }),
+    accounts: r.many.BankAccounts({
+      from: r.PlaidItems.id,
+      to: r.BankAccounts.plaidItemId,
+    }),
+  },
+  BankAccounts: {
+    user: r.one.users({
+      from: r.BankAccounts.userId,
+      to: r.users.id,
+    }),
+    plaidItem: r.one.PlaidItems({
+      from: r.BankAccounts.plaidItemId,
+      to: r.PlaidItems.id,
+    }),
+    transactions: r.many.Transactions({
+      from: r.BankAccounts.id,
+      to: r.Transactions.bankAccountId,
+    }),
+  },
+  Transactions: {
+    user: r.one.users({
+      from: r.Transactions.userId,
+      to: r.users.id,
+    }),
+    bankAccount: r.one.BankAccounts({
+      from: r.Transactions.bankAccountId,
+      to: r.BankAccounts.id,
+    }),
+  },
 }));

@@ -46,4 +46,42 @@ const formatDate = (dateString: string) => {
   }
 };
 
-export { formatDate, formatDuration, goBack };
+// Module level, not a hook: React Compiler forbids mutable state in a component
+// body, and Intl.NumberFormat construction is the expensive part.
+const currencyFormatters = new Map<string, Intl.NumberFormat>();
+
+/**
+ * `currency` is nullable throughout the Plaid data, and unofficial codes make
+ * `Intl` throw, so both fall back to a plain decimal rather than crashing a row.
+ */
+const formatCurrency = (
+  value: number,
+  currency?: string | null,
+  locale = "en-US",
+) => {
+  if (!Number.isFinite(value)) return "—";
+
+  const key = `${locale}:${currency ?? ""}`;
+  let formatter = currencyFormatters.get(key);
+
+  if (!formatter) {
+    try {
+      formatter = new Intl.NumberFormat(locale, {
+        style: currency ? "currency" : "decimal",
+        ...(currency ? { currency } : {}),
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    } catch {
+      formatter = new Intl.NumberFormat(locale, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    }
+    currencyFormatters.set(key, formatter);
+  }
+
+  return formatter.format(value);
+};
+
+export { formatCurrency, formatDate, formatDuration, goBack };

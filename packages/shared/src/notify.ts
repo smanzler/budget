@@ -10,8 +10,18 @@ export const systemMessageSchema = z.object({
   }),
 });
 
+/** A bank connection expired — the user has to re-authenticate through Link. */
+export const bankLoginRequiredSchema = z.object({
+  type: z.literal("bank_login_required"),
+  data: z.object({
+    itemId: z.string(),
+    institutionName: z.string().nullable(),
+  }),
+});
+
 export const notificationPayloadSchema = z.discriminatedUnion("type", [
   systemMessageSchema,
+  bankLoginRequiredSchema,
 ]);
 
 export type NotificationPayload = z.infer<typeof notificationPayloadSchema>;

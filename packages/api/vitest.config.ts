@@ -22,14 +22,15 @@ const testEnv: Record<keyof Env, string> = {
   SMTP_PASSWORD: "test-pass",
   SMTP_FROM: "test@example.com",
 
-  GOOGLE_CLIENT_ID: "google-client-id",
-  GOOGLE_CLIENT_SECRET: "google-client-secret",
+  EXPO_ACCESS_TOKEN: "test-expo-access-token",
 
-  APPLE_CLIENT_ID: "apple-client-id",
-  APPLE_TEAM_ID: "apple-team-id",
-  APPLE_KEY_ID: "apple-key-id",
-  APPLE_PRIVATE_KEY: "apple-private-key",
-  APPLE_APP_BUNDLE_IDENTIFIER: "com.test",
+  PLAID_CLIENT_ID: "test-plaid-client-id",
+  PLAID_SECRET: "test-plaid-secret",
+  PLAID_ENV: "sandbox",
+  PLAID_WEBHOOK_URL: "https://api.test/webhooks/plaid",
+
+  ENCRYPTION_KEY:
+    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
 };
 
 export default defineConfig({
