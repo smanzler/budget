@@ -16,7 +16,7 @@ import { createContext } from "./lib/trpc";
 import "./lib/boss";
 import "./lib/plaid-queue";
 
-const server = fastify({ maxParamLength: 5000 });
+const server = fastify({ routerOptions: { maxParamLength: 5000 } });
 
 server.setValidatorCompiler(validatorCompiler);
 server.setSerializerCompiler(serializerCompiler);

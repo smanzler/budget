@@ -3,9 +3,6 @@ import { View } from "react-native";
 import { formatTransactionAmount } from "../lib/format";
 import type { TransactionSection } from "../lib/group";
 
-/**
- * Sticky, so it needs an opaque background — rows scroll underneath it.
- */
 export function TransactionDayHeader({
   section,
 }: {
@@ -18,7 +15,7 @@ export function TransactionDayHeader({
   );
 
   return (
-    <View className="bg-background flex-row items-baseline justify-between px-1 pb-2 pt-4">
+    <View className="flex-row items-baseline justify-between px-1">
       <Text className="text-muted-foreground text-sm font-medium">
         {section.title}
       </Text>

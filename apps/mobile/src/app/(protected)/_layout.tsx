@@ -13,8 +13,6 @@ export default function Layout() {
         name="index"
         options={{
           title: "Transactions",
-          // Navigates to Accounts rather than launching Link directly — the
-          // list header is not the place for a modal bank flow.
           headerRight: () => (
             <Link href="/accounts" asChild>
               <Pressable hitSlop={12} accessibilityLabel="Accounts">

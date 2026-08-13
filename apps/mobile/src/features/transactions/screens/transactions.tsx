@@ -1,118 +1,68 @@
-import RefetchControl from "@/components/refetch-control";
+import { RefetchScroll } from "@/components/refetch-scroll";
+import { Section, SectionContent } from "@/components/section";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { Text } from "@/components/ui/text";
 import { ConnectBankButton } from "@/features/plaid/components/connect-bank-button";
-import { usePlaidItems } from "@/features/plaid/hooks/use-plaid-items";
-import { useTRPC } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Platform, SectionList } from "react-native";
 import { TransactionDayHeader } from "../components/transaction-day-header";
-import {
-  TransactionListEmpty,
-  type TransactionListState,
-} from "../components/transaction-list-empty";
-import { TransactionListFooter } from "../components/transaction-list-footer";
+import { TransactionListEmpty } from "../components/transaction-list-empty";
 import { TransactionRow } from "../components/transaction-row";
 import { useTransactions } from "../hooks/use-transactions";
 
+/**
+ * A plain scrolling list, not a SectionList.
+ *
+ * Virtualization needs `getItemLayout` to behave: without it the total content
+ * height is an estimate that gets revised as rows measure, which shifts the
+ * scroll offset when a page appends. Pagination already bounds how much is
+ * mounted here, so the estimate isn't worth its cost yet. Revisit (with
+ * `getItemLayout`, or FlashList) if these lists ever get genuinely long.
+ */
 export function Transactions() {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-
-  // Reading both here is free: httpBatchLink collapses same-tick calls into
-  // one request.
-  const items = usePlaidItems();
-  const transactions = useTransactions({ isSyncing: items.isSyncing });
-
-  // Awaited server-side, so pull-to-refresh reflects real new data rather than
-  // refetching the same rows.
-  const syncNow = useMutation(trpc.plaid.syncNow.mutationOptions());
-
-  const refetch = async () => {
-    if (items.hasItems) {
-      // A failed sync shouldn't block the refetch — show whatever we have.
-      await syncNow.mutateAsync({}).catch((error: unknown) => {
-        console.error(error);
-      });
-    }
-
-    await Promise.all([
-      items.refetch(),
-      queryClient.invalidateQueries(trpc.transactions.list.pathFilter()),
-    ]);
-  };
-
-  const state = listState({
-    isLoading: transactions.isPending || items.isPending,
-    isError: transactions.isError,
-    hasItems: items.hasItems,
-    isSyncing: items.isSyncing,
-    isEmpty: transactions.sections.length === 0,
-  });
-
-  const isEmpty = state !== null;
+  const { query, sections, loadMore } = useTransactions();
 
   return (
-    <SectionList
-      sections={transactions.sections}
-      keyExtractor={(item) => item.id}
-      stickySectionHeadersEnabled
-      refreshControl={<RefetchControl refetch={refetch} />}
-      automaticallyAdjustsScrollIndicatorInsets
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerClassName={cn(
-        "m-4 gap-1",
-        Platform.OS === "android" ? "pb-safe-offset-8" : "pb-4",
-        // Only when empty, so `Empty`'s flex-1 has something to fill.
-        isEmpty && "grow",
-      )}
-      renderSectionHeader={({ section }) => (
-        <TransactionDayHeader section={section} />
-      )}
-      renderItem={({ item, index, section }) => (
-        <TransactionRow
-          transaction={item}
-          isFirst={index === 0}
-          isLast={index === section.data.length - 1}
-        />
-      )}
-      ListEmptyComponent={
-        state ? (
-          <TransactionListEmpty
-            state={state}
-            onRetry={() => void transactions.refetch()}
-            action={<ConnectBankButton />}
-          />
-        ) : null
-      }
-      ListFooterComponent={
-        <TransactionListFooter
-          isFetchingNextPage={transactions.isFetchingNextPage}
+    <RefetchScroll
+      refetch={query.refetch}
+      isLoading={query.isPending}
+      loading={<TransactionListEmpty state="loading" />}
+      isEmpty={sections.length === 0}
+      empty={
+        <TransactionListEmpty
+          state={query.isError ? "error" : "empty"}
+          onRetry={() => void query.refetch()}
+          action={<ConnectBankButton />}
         />
       }
-      onEndReached={transactions.loadMore}
-      onEndReachedThreshold={0.5}
-    />
+    >
+      {sections.map((section) => (
+        <Section key={section.date}>
+          <TransactionDayHeader section={section} />
+          <SectionContent>
+            {section.data.map((transaction, index) => (
+              <TransactionRow
+                key={transaction.id}
+                transaction={transaction}
+                isFirst={index === 0}
+                isLast={index === section.data.length - 1}
+              />
+            ))}
+          </SectionContent>
+        </Section>
+      ))}
+
+      {query.hasNextPage ? (
+        <Button
+          variant="outline"
+          disabled={query.isFetchingNextPage}
+          onPress={loadMore}
+        >
+          {query.isFetchingNextPage ? (
+            <Spinner className="text-foreground" />
+          ) : null}
+          <Text>Load more</Text>
+        </Button>
+      ) : null}
+    </RefetchScroll>
   );
 }
-
-/** Null means "there are rows to show". */
-const listState = ({
-  isLoading,
-  isError,
-  hasItems,
-  isSyncing,
-  isEmpty,
-}: {
-  isLoading: boolean;
-  isError: boolean;
-  hasItems: boolean;
-  isSyncing: boolean;
-  isEmpty: boolean;
-}): TransactionListState | null => {
-  if (!isEmpty) return null;
-  if (isLoading) return "loading";
-  if (isError) return "error";
-  if (!hasItems) return "no-items";
-  if (isSyncing) return "syncing";
-  return "empty";
-};
