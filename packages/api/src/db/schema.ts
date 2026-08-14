@@ -68,11 +68,54 @@ export const Households = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => [
-    // Makes bootstrap idempotent: a retried signup hook does nothing instead of
-    // creating a second household.
-    uniqueIndex("households_created_by_user_id_key").on(t.createdByUserId),
+    // Was `uniqueIndex`, which capped a user at one household ever created.
+    //
+    // It cannot stay unique now that a user can leave a household they made:
+    // `ensureHousehold` would find the old row, revive their retired seat, and
+    // silently hand them `owner` over a household that now belongs to other
+    // people. Bootstrap idempotency moved to an advisory lock keyed on the user
+    // — see `bootstrapHousehold` in lib/household.ts — which is what the unique
+    // index was really providing.
+    index("households_created_by_user_id_idx").on(t.createdByUserId),
   ],
 );
+
+/**
+ * Which household a user is currently acting in.
+ *
+ * A side table rather than a column on `users`, for two concrete reasons.
+ * `schema.ts` re-exports better-auth's `auth-schema`, so drizzle-kit diffs
+ * better-auth's own table and a column added there is invisible to its schema
+ * management (`additionalFields` is the sanctioned extension point). And
+ * `households.created_by_user_id → users.id` plus `users.active_household_id →
+ * households.id` would be a circular FK, which `db/reset.ts` — drizzle-seed's
+ * `reset`, whose delete order comes from the schema graph — cannot resolve.
+ *
+ * Per user, not per device: a switch is a write, so two devices cannot view
+ * different households at once. Fine at this size, and a request header can
+ * override this later with the stored value as its fallback.
+ *
+ * Nothing here is authorization. `householdProcedure` re-checks that the stored
+ * household still has an active seat for the caller on every request, so a stale
+ * or hand-edited value degrades to the fallback rather than granting anything.
+ */
+export const UserHouseholdPrefs = pgTable("user_household_prefs", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /**
+   * `set null`, so deleting a household drops the pointer instead of blocking
+   * the delete — resolution then falls back to the caller's oldest active seat.
+   */
+  activeHouseholdId: uuid("active_household_id").references(
+    () => Households.id,
+    { onDelete: "set null" },
+  ),
+  updatedAt: timestamp("updated_at")
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
 
 /**
  * A member is a **seat**, not a user.
@@ -151,6 +194,12 @@ export const HouseholdInvites = pgTable(
     // One live invite per address per household — re-inviting reuses the row.
     uniqueIndex("household_invites_open_email_key")
       .on(t.householdId, t.email)
+      .where(sql`redeemed_at is null and revoked_at is null`),
+    // Serves `invites.mine`, which looks an address up across every household
+    // and so can use neither of the two indexes above. Partial, because a
+    // redeemed or revoked invite is never a candidate.
+    index("household_invites_open_email_idx")
+      .on(sql`lower(${t.email})`)
       .where(sql`redeemed_at is null and revoked_at is null`),
     foreignKey({
       columns: [t.memberId, t.householdId],
@@ -706,10 +755,20 @@ export const SplitIntents = pgTable("split_intents", {
     .notNull()
     .references(() => Households.id, { onDelete: "cascade" }),
   splitMethod: splitMethodEnum("split_method").notNull(),
-  /** `[{ memberId, weight }]` — the recipe, not the cents. */
+  /**
+   * `[{ memberId, weight, amountCents }]` — the recipe *and* the cents.
+   *
+   * The weights alone are enough to carry a `shares` split across the
+   * pending→posted boundary, but not an `exact` one: those cents are numbers a
+   * human typed, and re-running the allocator over their weights (all 1s) turns
+   * a hand-made split into an equal one two days later, silently.
+   *
+   * `amountCents` is optional because rows written before it existed do not
+   * carry it; those replay as weights, which is exactly the old behaviour.
+   */
   parts: jsonb("parts")
     .notNull()
-    .$type<{ memberId: string; weight: number }[]>(),
+    .$type<{ memberId: string; weight: number; amountCents?: number }[]>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

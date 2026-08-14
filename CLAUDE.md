@@ -5,6 +5,7 @@ pnpm monorepo — Expo mobile app (`apps/mobile`), TanStack Start web app (`apps
 ## General
 
 - Do not execute `cd` commands into your current working directory
+- Write any documentation (including code comments) using ASD-STE100 formt
 
 ## Writing code
 
@@ -22,12 +23,16 @@ pnpm monorepo — Expo mobile app (`apps/mobile`), TanStack Start web app (`apps
 
   On the wire this means `z.discriminatedUnion`, as in `packages/shared/src/notify.ts`.
 
-## Frontend styling
-
-Prefer `className` over the `style` prop for frontend styling whenever possible.
-
-In app code, import UI components from `@/components/ui` — never `Text`, `Pressable`, or other styled primitives straight from `react-native`, and never `@base-ui/react` directly on the web. Those belong inside `components/ui` wrappers, which carry the shared variants and theming. If a component isn't there yet, add it rather than styling a raw primitive at the call site.
-
 ## Verification
 
-If a dev server is up, feel free to use it when it makes sense to, not just for the sake of it.
+- Run `pnpm lint`, `pnpm typecheck` and `pnpm test` before you report the work as complete
+- Give `test` a file path to run one test file. This works in every workspace:
+
+  ```sh
+  pnpm --filter @budget/api test src/lib/splits.test.ts
+  pnpm --filter @budget/mobile test src/lib/money.test.ts
+  ```
+
+- Use a dev server that already runs when you must see the change. Examples: a UI difference, or a bug that you must reproduce
+- Do not start a dev server when `lint` and `typecheck` answer the question
+- Check for a dev server before you start one. Stop each dev server that you start

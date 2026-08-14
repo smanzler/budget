@@ -36,15 +36,17 @@ export function VerifyOtp() {
     return () => clearInterval(timer);
   }, []);
 
-  const handleSubmit = async () => {
-    if (!email || otp.length !== 6) {
+  // `code` is passed explicitly by `onFilled`, which fires in the same tick as
+  // the `onTextChange` that sets `otp` — the state read here would still be stale.
+  const handleSubmit = async (code = otp) => {
+    if (!email || submitting || code.length !== 6) {
       return;
     }
 
     setSubmitting(true);
     setError(null);
     try {
-      const { error } = await authClient.signIn.emailOtp({ email, otp });
+      const { error } = await authClient.signIn.emailOtp({ email, otp: code });
 
       if (error) {
         throw error;
@@ -125,6 +127,11 @@ export function VerifyOtp() {
               setOtp(text);
               setError(null);
             }}
+            onFilled={handleSubmit}
+            textInputProps={{
+              returnKeyType: "go",
+              onSubmitEditing: () => handleSubmit(),
+            }}
           />
 
           {error && (
@@ -134,7 +141,7 @@ export function VerifyOtp() {
           )}
 
           <Button
-            onPress={handleSubmit}
+            onPress={() => handleSubmit()}
             disabled={submitting || otp.length !== 6}
           >
             {submitting && <Spinner className="text-secondary" />}

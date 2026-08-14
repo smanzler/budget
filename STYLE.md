@@ -56,7 +56,7 @@ Use (in order of preference):
 
 ## Structure
 
-**Mobile.** `src/app` holds routes only — a route file is either a couple of lines re-exporting a screen (`export default SignIn`) or a small screen with no reusable parts. Real screens live in `src/features/<feature>/screens`, with that feature's `components/` and `hooks/` beside them. Cross-feature UI goes in `src/components`, cross-feature helpers in `src/lib`.
+**Mobile/Web.** `src/app` holds routes only — a route file is either a couple of lines re-exporting a screen (`export default SignIn`) or a small screen with no reusable parts. Real screens live in `src/features/<feature>/screens`, with that feature's `components/` and `hooks/` beside them. Cross-feature UI goes in `src/components`, cross-feature helpers in `src/lib`.
 
 **API.** One directory per tRPC router under `src/routes`, composed into `appRouter` in `src/routes/index.ts`. Nested routers get a subdirectory (`routes/notifications/push-tokens`). External clients and business logic go in `src/lib`; Drizzle tables and relations in `src/db`.
 

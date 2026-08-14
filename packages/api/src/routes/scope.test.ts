@@ -216,7 +216,11 @@ describe.skipIf(!url)("household scoping", () => {
         settlementId: crypto.randomUUID(),
         toMemberId: bob.household.myMemberId,
         amountCents: 5000,
-        settledOn: "2026-09-20",
+        // Must be a past date, and that is the point of the comment: `settledOn`
+        // is now bounded at tomorrow, so a future one is refused by input
+        // validation before the scoping check this test exists for is ever
+        // reached — and the assertion below would then pass for the wrong reason.
+        settledOn: "2026-01-05",
       }),
     ).rejects.toThrow();
   });
@@ -230,5 +234,55 @@ describe.skipIf(!url)("household scoping", () => {
 
     expect(balances.pairs).toHaveLength(0);
     expect(members.map((m) => m.id)).not.toContain(bob.household.myMemberId);
+  });
+
+  /**
+   * The user-scoped tier, which is new and is the only part of the API that is
+   * *not* protected by `householdProcedure`'s "householdId is never an input"
+   * rule. `list`, `setActive` and `invites.mine` all take a user rather than a
+   * household, so each one needs its own predicate — and these are the tests that
+   * say the predicate is really there.
+   */
+  it("lists only the households a user is actually a member of", async () => {
+    const mine = await alice.api.household.list();
+
+    expect(mine.map((row) => row.householdId)).toEqual([alice.household.id]);
+    expect(mine.map((row) => row.householdId)).not.toContain(bob.household.id);
+    // Exactly one, so it is unambiguously the active one.
+    expect(mine[0]!.isActive).toBe(true);
+    expect(mine[0]!.role).toBe("owner");
+  });
+
+  it("refuses to switch into a household you are not in", async () => {
+    await expect(
+      alice.api.household.setActive({ householdId: bob.household.id }),
+    ).rejects.toThrow();
+
+    // And the switch did not happen: Alice still resolves to her own household.
+    const stillMine = await alice.api.household.get();
+    expect(stillMine.id).toBe(alice.household.id);
+  });
+
+  it("never shows one user another address's invite", async () => {
+    const invite = await bob.api.household.invite({
+      email: `${STAMP}-carol@example.com`,
+      displayName: "Carol",
+    });
+
+    // Alice is signed in as neither Bob nor Carol, so she must see nothing —
+    // `invites.mine` is keyed on the session's own verified address.
+    await expect(alice.api.household.invites.mine()).resolves.toEqual([]);
+
+    // And the code alone must not let her take it, which is the property the
+    // in-app list is not allowed to weaken.
+    await expect(
+      alice.api.household.acceptInvite({ code: invite.code }),
+    ).rejects.toThrow();
+
+    // Nor by id, which is the new input — it is a name for an invite, not a
+    // capability to redeem one.
+    await expect(
+      alice.api.household.acceptInvite({ inviteId: invite.inviteId }),
+    ).rejects.toThrow();
   });
 });

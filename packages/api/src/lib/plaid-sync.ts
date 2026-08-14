@@ -22,7 +22,6 @@ import { plaid, plaidErrorCode } from "./plaid";
 import { sqlExcluded } from "./sql";
 import {
   assertSplitsBalance,
-  partsFromWeights,
   reallocateForAmountChange,
   resolveDefaultSplit,
   splitsToPairs,
@@ -554,11 +553,24 @@ const resolveSplitChanges = async (
         : undefined;
 
       resolved = carried
-        ? {
+        ? // Through the same function the amount-change path uses, rather than
+          // a second implementation of it: the pending and posted amounts
+          // routinely differ (a tip), and re-running the allocator over an
+          // `exact` intent's weights — which `setSplit` writes as all 1s —
+          // would turn a hand-typed split into an equal one.
+          reallocateForAmountChange({
             method: carried.method,
-            parts: partsFromWeights(totalCents, carried.parts),
-            splitsStale: false,
-          }
+            creditorMemberId: post.creditorMemberId,
+            existing: carried.parts.map((part) => ({
+              memberId: part.memberId,
+              weight: part.weight,
+              // Absent on rows archived before the cents were carried; zero
+              // reads as "no exact intent recorded", which sends `exact` down
+              // the reset path rather than inventing amounts for it.
+              amountCents: part.amountCents ?? 0,
+            })),
+            newCents: totalCents,
+          })
         : {
             ...resolveDefaultSplit({
               creditorMemberId: post.creditorMemberId,
@@ -654,6 +666,7 @@ const reverseRemoved = async (
           parts: parts.map((part) => ({
             memberId: part.memberId,
             weight: part.weight,
+            amountCents: part.amountCents,
           })),
         },
       ];
@@ -740,7 +753,10 @@ const loadIntents = async (tx: Tx, plaidTransactionIds: string[]) => {
 
   return new Map<
     string,
-    { method: SplitMethod; parts: { memberId: string; weight: number }[] }
+    {
+      method: SplitMethod;
+      parts: { memberId: string; weight: number; amountCents?: number }[];
+    }
   >(
     rows.map((row) => [
       row.plaidTransactionId,

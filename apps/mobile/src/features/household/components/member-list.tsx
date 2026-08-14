@@ -17,11 +17,14 @@ import { MemberRow } from "./member-row";
 export function MemberList({
   onMemberPress,
   onRemove,
+  onMakeOwner,
   onInvite,
 }: {
   onMemberPress?: (member: Member) => void;
   /** Owner-only, and never offered for your own seat. */
   onRemove?: (member: Member) => void;
+  /** Owner-only, and only for seats somebody has actually claimed. */
+  onMakeOwner?: (member: Member) => void;
   onInvite: () => void;
 }) {
   const { members, isOwner } = useHousehold();
@@ -40,6 +43,16 @@ export function MemberList({
           onRemove={
             onRemove && isOwner && !member.isYou
               ? () => onRemove(member)
+              : undefined
+          }
+          // `invited` seats are excluded: the server refuses them, because a
+          // seat with no user behind it cannot exercise the role.
+          onMakeOwner={
+            onMakeOwner &&
+            isOwner &&
+            !member.isYou &&
+            member.status === "active"
+              ? () => onMakeOwner(member)
               : undefined
           }
         />

@@ -45,6 +45,7 @@ function DialogOverlay({
           exiting={FadeOut.duration(150)}
         >
           <NativeOnlyAnimatedView
+            className="w-full"
             entering={FadeIn.delay(50)}
             exiting={FadeOut.duration(150)}
           >

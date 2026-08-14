@@ -7,8 +7,10 @@ import {
   SectionItem,
   SectionItemContent,
 } from "@/components/section";
+import { Button } from "@/components/ui/button";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -18,7 +20,7 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { cn } from "@/lib/utils";
 import { Link } from "expo-router";
-import { CircleCheck } from "lucide-react-native";
+import { CircleCheck, HandCoins } from "lucide-react-native";
 import { BalanceHero } from "../components/balance-hero";
 import { useBalances } from "../hooks/use-balances";
 import { formatSignedCents } from "@/lib/money";
@@ -54,6 +56,18 @@ export function Balances() {
                 </EmptyDescription>
               ) : null}
             </EmptyHeader>
+            {/* Repeated here because `isEmpty` replaces the body outright, and
+                "you're all settled up" is the single most likely state to be
+                reading from a payment that should never have been recorded. */}
+            {isShared ? (
+              <EmptyContent>
+                <Link href="/payments" asChild>
+                  <Button variant="outline">
+                    <Text>See payments</Text>
+                  </Button>
+                </Link>
+              </EmptyContent>
+            ) : null}
           </Empty>
         )
       }
@@ -101,6 +115,21 @@ export function Balances() {
               </SectionItem>
             </Link>
           ))}
+        </SectionContent>
+      </Section>
+
+      {/* Outside the pairs card, and shown even when every pair nets to zero:
+          the reason to open it is usually a payment that should not have been
+          recorded, and that is exactly when the balance above looks settled. */}
+      <Section>
+        <SectionContent>
+          <Link href="/payments" asChild>
+            <SectionItem>
+              <Icon as={HandCoins} className="text-foreground size-4" />
+              <Text className="min-w-0 flex-1 font-medium">Payments</Text>
+              <SectionItemContent />
+            </SectionItem>
+          </Link>
         </SectionContent>
       </Section>
     </RefetchScroll>

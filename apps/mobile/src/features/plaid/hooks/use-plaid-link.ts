@@ -1,4 +1,4 @@
-import { useTRPC } from "@/lib/trpc";
+import { useTRPC, type RouterOutputs } from "@/lib/trpc";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Platform } from "react-native";
@@ -10,6 +10,10 @@ import {
 } from "react-native-plaid-link-sdk";
 
 type Status = "idle" | "pending" | "error";
+
+/** The account the newly linked one appears to duplicate, if any. */
+export type DuplicateAccount =
+  RouterOutputs["plaid"]["exchangePublicToken"]["duplicateOf"];
 
 /**
  * Wraps the native Link flow.
@@ -23,6 +27,7 @@ export const usePlaidLink = ({ onLinked }: { onLinked?: () => void } = {}) => {
 
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [duplicate, setDuplicate] = useState<DuplicateAccount>(null);
 
   // v13 removed `destroy()`, so each open gets a fresh session. Holding it in a
   // ref keeps it from being collected while Link is on screen.
@@ -42,7 +47,7 @@ export const usePlaidLink = ({ onLinked }: { onLinked?: () => void } = {}) => {
 
   const handleSuccess = async (success: LinkSuccess) => {
     try {
-      await exchangePublicToken.mutateAsync({
+      const linked = await exchangePublicToken.mutateAsync({
         publicToken: success.publicToken,
       });
 
@@ -52,6 +57,12 @@ export const usePlaidLink = ({ onLinked }: { onLinked?: () => void } = {}) => {
         queryClient.invalidateQueries(trpc.plaid.pathFilter()),
         queryClient.invalidateQueries(trpc.transactions.list.pathFilter()),
       ]);
+
+      // The one thing Link cannot tell the user itself: this bank is already
+      // connected, so its transactions are about to appear twice. Surfaced
+      // rather than acted on — muting the wrong side of a mask collision would
+      // hide real history, and only the user knows which is which.
+      setDuplicate(linked.duplicateOf);
 
       onLinked?.();
       finish();
@@ -81,6 +92,7 @@ export const usePlaidLink = ({ onLinked }: { onLinked?: () => void } = {}) => {
   const open = async (itemId?: string) => {
     setStatus("pending");
     setError(null);
+    setDuplicate(null);
 
     try {
       // Fetched on press, never prefetched: link tokens are short-lived,
@@ -114,6 +126,8 @@ export const usePlaidLink = ({ onLinked }: { onLinked?: () => void } = {}) => {
   return {
     open,
     error,
+    duplicate,
+    dismissDuplicate: () => setDuplicate(null),
     isPending: status === "pending" || exchangePublicToken.isPending,
   };
 };

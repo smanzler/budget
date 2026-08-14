@@ -7,12 +7,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { RadioGroup, RadioGroupOption } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import type { BankAccount } from "@/features/plaid/lib/format";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import { useState } from "react";
 import {
   useHousehold,
@@ -21,36 +20,6 @@ import {
 } from "../hooks/use-household";
 import { apiErrorMessage } from "../lib/errors";
 import { formatIsoDate, todayIsoDate } from "../lib/format";
-
-function Option({
-  value,
-  title,
-  description,
-  nativeID,
-  onSelect,
-}: {
-  value: string;
-  title: string;
-  description: string;
-  nativeID: string;
-  onSelect: () => void;
-}) {
-  return (
-    <Pressable className="flex-row items-start gap-3" onPress={onSelect}>
-      <RadioGroupItem
-        value={value}
-        aria-labelledby={nativeID}
-        className="mt-1"
-      />
-      <View className="flex-1 gap-0.5">
-        <Label nativeID={nativeID} onPress={onSelect}>
-          {title}
-        </Label>
-        <Text className="text-muted-foreground text-xs">{description}</Text>
-      </View>
-    </Pressable>
-  );
-}
 
 /**
  * Who an account belongs to, who can see it, and how new transactions on it
@@ -165,10 +134,9 @@ export function AccountSplitSheet({
           {isOwner ? (
             <RadioGroup value={ownerMemberId} onValueChange={setOwnerMemberId}>
               {members.map((member) => (
-                <Option
+                <RadioGroupOption
                   key={member.id}
                   value={member.id}
-                  nativeID={`owner-${member.id}`}
                   title={member.displayName}
                   description="Gets paid back for everything on this account."
                   onSelect={() => setOwnerMemberId(member.id)}
@@ -187,16 +155,14 @@ export function AccountSplitSheet({
           <Text className="text-sm font-medium">Visibility</Text>
           {canSetVisibility ? (
             <RadioGroup value={visibility} onValueChange={setVisibility}>
-              <Option
+              <RadioGroupOption
                 value="shared"
-                nativeID="visibility-shared"
                 title="Shared"
                 description="Everyone in the household sees these transactions."
                 onSelect={() => setVisibility("shared")}
               />
-              <Option
+              <RadioGroupOption
                 value="private"
-                nativeID="visibility-private"
                 title="Private"
                 description={`Only ${ownerName(ownerMemberId)} sees these transactions, and nothing on the account is split.`}
                 onSelect={() => setVisibility("private")}
@@ -214,16 +180,14 @@ export function AccountSplitSheet({
         <View className="gap-2">
           <Text className="text-sm font-medium">New transactions</Text>
           <RadioGroup value={split} onValueChange={setSplit}>
-            <Option
+            <RadioGroupOption
               value="owner"
-              nativeID="split-owner"
               title={`Only ${ownerName(ownerMemberId)}`}
               description="Nothing on this account is split unless you split it yourself."
               onSelect={() => setSplit("owner")}
             />
-            <Option
+            <RadioGroupOption
               value="equal"
-              nativeID="split-equal"
               title={`Split equally from ${formatIsoDate(splitFrom)}`}
               description={`Only transactions dated ${formatIsoDate(splitFrom)} or later are split. Everything before that stays exactly as it is — turning this on can never invent debt for months you have already settled.`}
               onSelect={() => setSplit("equal")}

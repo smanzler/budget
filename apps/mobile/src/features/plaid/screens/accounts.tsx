@@ -13,12 +13,13 @@ import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { AccountSplitSheet } from "@/features/household/components/account-split-sheet";
+import { HouseholdSwitcher } from "@/features/household/components/household-switcher";
 import { InviteSheet } from "@/features/household/components/invite-sheet";
 import { MemberList } from "@/features/household/components/member-list";
 import { useHousehold } from "@/features/household/hooks/use-household";
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "expo-router";
-import { UsersRound } from "lucide-react-native";
+import { KeyRound, UsersRound } from "lucide-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 import { AccountsEmpty } from "../components/accounts-empty";
@@ -70,6 +71,15 @@ export function Accounts() {
 
   return (
     <>
+      {/* Above the scroll, and on this screen rather than Household, for two
+          reasons that both come down to reachability: `isEmpty` swaps the
+          children out — and somebody who has just joined a household has no bank
+          connections yet — while the Household screen is gated behind
+          `isShared`, so switching into a household you are alone in would take
+          the switcher away with it and leave no way back. Accounts is reachable
+          from the Transactions header unconditionally. */}
+      <HouseholdSwitcher className="px-4 pt-3" />
+
       <RefetchScroll
         refetch={items.refetch}
         isLoading={items.isPending}
@@ -100,6 +110,18 @@ export function Accounts() {
               >
                 <Icon as={UsersRound} className="text-foreground size-4" />
                 <Text className="font-medium">Split with someone</Text>
+                <SectionItemContent />
+              </SectionItem>
+              {/* The other side of the same door. An invite normally arrives by
+                  email or shows up on Transactions by itself, so this is only
+                  for a code read off somebody else's screen — which is exactly
+                  the case that has nowhere else to go. */}
+              <SectionItem
+                onPress={() => router.push("/join")}
+                className="h-auto py-2.5"
+              >
+                <Icon as={KeyRound} className="text-foreground size-4" />
+                <Text className="font-medium">I have an invite code</Text>
                 <SectionItemContent />
               </SectionItem>
             </SectionContent>

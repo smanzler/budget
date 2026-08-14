@@ -1,6 +1,6 @@
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import db from "../db";
-import { HouseholdMembers, Households } from "../db/schema";
+import { HouseholdMembers, Households, UserHouseholdPrefs } from "../db/schema";
 
 /** The seat a request acts as. Resolved from the session, never from input. */
 export type Member = typeof HouseholdMembers.$inferSelect;
@@ -33,33 +33,104 @@ export const ensureHousehold = async (user: {
   name?: string | null;
   email: string;
 }): Promise<Member> => {
-  const existing = await findActiveMember(user.id);
+  const existing = await resolveActiveMember(user.id);
   if (existing) return existing;
 
+  return bootstrapHousehold(user);
+};
+
+/**
+ * The seat a user acts as, out of however many they hold.
+ *
+ * Their stored preference first, then their oldest active seat. The fallback is
+ * not a nicety: the preference can point at a household they have since left, or
+ * one that has been deleted, and either has to degrade to a working session
+ * rather than a 404 on every screen.
+ *
+ * Notice what the preference is checked against — an **active seat in that
+ * household for this user**. That is why storing it is not an authorization
+ * decision: a stale or tampered value selects nothing and falls through.
+ */
+export const resolveActiveMember = async (
+  userId: string,
+): Promise<Member | undefined> => {
+  const pref = await db.query.UserHouseholdPrefs.findFirst({
+    where: { userId },
+    columns: { activeHouseholdId: true },
+  });
+
+  if (pref?.activeHouseholdId) {
+    const preferred = await db.query.HouseholdMembers.findFirst({
+      where: {
+        userId,
+        status: "active",
+        householdId: pref.activeHouseholdId,
+      },
+    });
+
+    if (preferred) return preferred;
+  }
+
+  return db.query.HouseholdMembers.findFirst({
+    where: { userId, status: "active" },
+    // Deterministic, so a user with several seats and no preference does not
+    // silently flip between households from one request to the next.
+    orderBy: { createdAt: "asc" },
+  });
+};
+
+/**
+ * Gives a user with no active seat anywhere a household of their own.
+ *
+ * Always a **fresh** household, never a revived seat in the one they made
+ * first. Reviving used to be safe under the single-household assertion — "this
+ * household is by definition the one this user created, so the seat is their
+ * own" — and stopped being safe the moment `leave` existed: the household they
+ * created can now belong to other people, and flipping their retired seat back
+ * to `active` would restore `role: 'owner'` over it, handing back `rename`,
+ * `removeMember`, `setAccountOwner` and account privacy to somebody who left.
+ *
+ * Idempotent under concurrency by advisory lock rather than by a unique index on
+ * `households.created_by_user_id`, which is the constraint that forced the
+ * revive: it capped a user at one household ever created. The lock gives the
+ * same guarantee — two simultaneous first requests, one household — without
+ * capping anything.
+ */
+const bootstrapHousehold = (user: {
+  id: string;
+  name?: string | null;
+  email: string;
+}): Promise<Member> => {
   const displayName = memberDisplayName(user);
 
   return db.transaction(async (tx) => {
-    await tx
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`household-bootstrap:${user.id}`}, 0))`,
+    );
+
+    // Re-read inside the lock. The loser of a race must adopt the winner's
+    // household instead of creating a second one, and this is the only place
+    // that can tell the difference.
+    const raced = await tx.query.HouseholdMembers.findFirst({
+      where: { userId: user.id, status: "active" },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (raced) return raced;
+
+    const [household] = await tx
       .insert(Households)
       .values({
         name: `${displayName}'s household`,
         createdByUserId: user.id,
       })
-      .onConflictDoNothing({ target: Households.createdByUserId });
-
-    // Read back rather than trusting RETURNING: `onConflictDoNothing` returns
-    // no rows when the insert lost the race, and that is exactly the case we
-    // need the id for.
-    const household = await tx.query.Households.findFirst({
-      where: { createdByUserId: user.id },
-      columns: { id: true },
-    });
+      .returning({ id: Households.id });
 
     if (!household) {
       throw new Error(`failed to bootstrap a household for user ${user.id}`);
     }
 
-    await tx
+    const [member] = await tx
       .insert(HouseholdMembers)
       .values({
         householdId: household.id,
@@ -69,50 +140,32 @@ export const ensureHousehold = async (user: {
         status: "active",
         joinedAt: new Date(),
       })
-      .onConflictDoNothing({
-        target: [HouseholdMembers.householdId, HouseholdMembers.userId],
-      });
-
-    const member = await tx.query.HouseholdMembers.findFirst({
-      where: { householdId: household.id, userId: user.id },
-    });
+      .returning();
 
     if (!member) {
       throw new Error(`failed to bootstrap a member seat for user ${user.id}`);
     }
 
-    if (member.status === "active") return member;
-
-    // The insert above conflicts on `(household_id, user_id)`, which matches a
-    // seat in ANY status — so a user whose only seats have been retired reads
-    // one back and would then act as a `removed` member: invisible to
-    // `splittableMembers`, filtered out of the client's own member list, yet
-    // still carrying `role: 'owner'`. Reachable by joining another household
-    // (which retires this seat) and later being removed from it.
-    //
-    // Safe to reactivate unconditionally: this household is by definition the
-    // one this user created, so the seat is their own.
-    const [revived] = await tx
-      .update(HouseholdMembers)
-      .set({ status: "active", removedAt: null, joinedAt: new Date() })
-      .where(eq(HouseholdMembers.id, member.id))
-      .returning();
-
-    return revived ?? member;
+    return member;
   });
 };
 
 /**
- * v1 asserts a user is in exactly one household. Multi-household support is a
- * switcher on top of this lookup, not a schema change.
+ * Points a user at a household. Call only after proving they hold an active seat
+ * in it — this writes a preference, it does not check one.
  */
-const findActiveMember = (userId: string) =>
-  db.query.HouseholdMembers.findFirst({
-    where: { userId, status: "active" },
-    // Deterministic if a second membership ever appears, so a user does not
-    // silently flip between households between requests.
-    orderBy: { createdAt: "asc" },
-  });
+export const setActiveHousehold = (
+  tx: Pick<typeof db, "insert">,
+  userId: string,
+  householdId: string | null,
+) =>
+  tx
+    .insert(UserHouseholdPrefs)
+    .values({ userId, activeHouseholdId: householdId })
+    .onConflictDoUpdate({
+      target: UserHouseholdPrefs.userId,
+      set: { activeHouseholdId: householdId, updatedAt: new Date() },
+    });
 
 /** A member as the clients see one, on a split, a balance or an activity row. */
 export type MemberRef = {

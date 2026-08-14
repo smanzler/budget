@@ -24,6 +24,16 @@ export const relations = defineRelations(schema, (r) => ({
       to: r.Transactions.householdId,
     }),
   },
+  UserHouseholdPrefs: {
+    user: r.one.users({
+      from: r.UserHouseholdPrefs.userId,
+      to: r.users.id,
+    }),
+    activeHousehold: r.one.Households({
+      from: r.UserHouseholdPrefs.activeHouseholdId,
+      to: r.Households.id,
+    }),
+  },
   HouseholdMembers: {
     household: r.one.Households({
       from: r.HouseholdMembers.householdId,

@@ -17,7 +17,7 @@ export function SignIn() {
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    if (!email) {
+    if (!email || submitting) {
       return;
     }
 
@@ -65,6 +65,8 @@ export function SignIn() {
                   setEmail(text);
                   setError(null);
                 }}
+                returnKeyType="go"
+                onSubmitEditing={handleSubmit}
               />
             </Field>
           </FieldGroup>

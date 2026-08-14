@@ -270,6 +270,88 @@ describe("reallocateForAmountChange", () => {
       expect(mirrored?.amountCents).toBe(-part.amountCents);
     }
   });
+
+  /**
+   * "I paid, the two of you split it" — the payer is not in the split at all.
+   *
+   * This used to be stored as the participants plus a fabricated
+   * `{ payer, weight: 1, amountCents: 0 }` row, and that weight read as a full
+   * equal share the next time Plaid moved the amount.
+   */
+  describe("a split that omits the payer", () => {
+    const CARLA = "33333333-3333-4333-8333-333333333333";
+
+    const withoutPayer = partsFromWeights(9900, [
+      { memberId: ANA, weight: 1 },
+      { memberId: CARLA, weight: 1 },
+    ]);
+
+    it("does not hand the payer a share when the amount changes", () => {
+      const { parts } = reallocateForAmountChange({
+        method: "shares",
+        creditorMemberId: SIMON,
+        existing: withoutPayer,
+        newCents: 12000,
+      });
+
+      expect(parts.find((part) => part.memberId === SIMON)).toBeUndefined();
+      expect(parts).toEqual([
+        { memberId: ANA, weight: 1, amountCents: 6000 },
+        { memberId: CARLA, weight: 1, amountCents: 6000 },
+      ]);
+    });
+
+    it("nets a full refund to zero for everyone", () => {
+      const refund = reallocateForAmountChange({
+        method: "shares",
+        creditorMemberId: SIMON,
+        existing: withoutPayer,
+        newCents: -9900,
+      });
+
+      for (const part of withoutPayer) {
+        const mirrored = refund.parts.find((p) => p.memberId === part.memberId);
+        expect(mirrored?.amountCents).toBe(-part.amountCents);
+      }
+    });
+
+    it("absorbs an exact split's variance onto the payer rather than resetting", () => {
+      // Nobody to absorb onto used to mean `creditor === undefined`, which
+      // reset the whole split to owner-only.
+      const { method, parts, splitsStale } = reallocateForAmountChange({
+        method: "exact",
+        creditorMemberId: SIMON,
+        existing: [
+          { memberId: ANA, weight: 1, amountCents: 2500 },
+          { memberId: CARLA, weight: 1, amountCents: 2500 },
+        ],
+        newCents: 5340,
+      });
+
+      expect(method).toBe("exact");
+      expect(parts).toEqual([
+        { memberId: ANA, weight: 1, amountCents: 2500 },
+        { memberId: CARLA, weight: 1, amountCents: 2500 },
+        // The tip lands on the person who actually paid it.
+        { memberId: SIMON, weight: 1, amountCents: 340 },
+      ]);
+      expect(splitsStale).toBe(true);
+    });
+
+    it("leaves the payer out when there is no variance to absorb", () => {
+      const { parts } = reallocateForAmountChange({
+        method: "exact",
+        creditorMemberId: SIMON,
+        existing: [
+          { memberId: ANA, weight: 1, amountCents: 2500 },
+          { memberId: CARLA, weight: 1, amountCents: 2500 },
+        ],
+        newCents: 5000,
+      });
+
+      expect(parts.find((part) => part.memberId === SIMON)).toBeUndefined();
+    });
+  });
 });
 
 describe("splitsToPairs", () => {

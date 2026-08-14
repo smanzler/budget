@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { Trash2 } from "lucide-react-native";
+import { Crown, Trash2 } from "lucide-react-native";
 import { View } from "react-native";
 import type { Member } from "../hooks/use-household";
 
@@ -18,6 +18,7 @@ export function MemberRow({
   isLast,
   onPress,
   onRemove,
+  onMakeOwner,
 }: {
   member: Member;
   isFirst: boolean;
@@ -25,6 +26,11 @@ export function MemberRow({
   onPress?: () => void;
   /** Owner-only, and never on your own row: you cannot remove yourself. */
   onRemove?: () => void;
+  /**
+   * Owner-only, and only for a claimed seat — an unclaimed one has no user
+   * behind it to exercise the role.
+   */
+  onMakeOwner?: () => void;
 }) {
   return (
     <SectionItem
@@ -51,7 +57,26 @@ export function MemberRow({
             <Text className="text-[10px]">Invited</Text>
           </Badge>
         ) : null}
+
+        {member.role === "owner" ? (
+          <Badge variant="secondary" className="px-1.5 py-0">
+            <Text className="text-[10px]">Owner</Text>
+          </Badge>
+        ) : null}
       </View>
+
+      {onMakeOwner ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          hitSlop={8}
+          accessibilityLabel={`Make ${member.displayName} the owner`}
+          onPress={onMakeOwner}
+        >
+          <Icon as={Crown} className="text-muted-foreground size-4" />
+        </Button>
+      ) : null}
 
       {onRemove ? (
         <Button

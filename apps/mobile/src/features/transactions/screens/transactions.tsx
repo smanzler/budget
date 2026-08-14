@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { ConnectBankButton } from "@/features/plaid/components/connect-bank-button";
+import { PendingInvites } from "@/features/household/components/pending-invites";
 import { TransactionDayHeader } from "../components/transaction-day-header";
 import { TransactionListEmpty } from "../components/transaction-list-empty";
 import { TransactionRow } from "../components/transaction-row";
@@ -22,47 +23,53 @@ export function Transactions() {
   const { query, sections, loadMore } = useTransactions();
 
   return (
-    <RefetchScroll
-      refetch={query.refetch}
-      isLoading={query.isPending}
-      loading={<TransactionListEmpty state="loading" />}
-      isEmpty={sections.length === 0}
-      empty={
-        <TransactionListEmpty
-          state={query.isError ? "error" : "empty"}
-          onRetry={() => void query.refetch()}
-          action={<ConnectBankButton />}
-        />
-      }
-    >
-      {sections.map((section) => (
-        <Section key={section.date}>
-          <TransactionDayHeader section={section} />
-          <SectionContent>
-            {section.data.map((transaction, index) => (
-              <TransactionRow
-                key={transaction.id}
-                transaction={transaction}
-                isFirst={index === 0}
-                isLast={index === section.data.length - 1}
-              />
-            ))}
-          </SectionContent>
-        </Section>
-      ))}
+    <>
+      {/* Above the scroll, not inside it: `isEmpty` swaps the children out, and
+          somebody who has just been invited has nothing in this list yet. */}
+      <PendingInvites />
 
-      {query.hasNextPage ? (
-        <Button
-          variant="outline"
-          disabled={query.isFetchingNextPage}
-          onPress={loadMore}
-        >
-          {query.isFetchingNextPage ? (
-            <Spinner className="text-foreground" />
-          ) : null}
-          <Text>Load more</Text>
-        </Button>
-      ) : null}
-    </RefetchScroll>
+      <RefetchScroll
+        refetch={query.refetch}
+        isLoading={query.isPending}
+        loading={<TransactionListEmpty state="loading" />}
+        isEmpty={sections.length === 0}
+        empty={
+          <TransactionListEmpty
+            state={query.isError ? "error" : "empty"}
+            onRetry={() => void query.refetch()}
+            action={<ConnectBankButton />}
+          />
+        }
+      >
+        {sections.map((section) => (
+          <Section key={section.date}>
+            <TransactionDayHeader section={section} />
+            <SectionContent>
+              {section.data.map((transaction, index) => (
+                <TransactionRow
+                  key={transaction.id}
+                  transaction={transaction}
+                  isFirst={index === 0}
+                  isLast={index === section.data.length - 1}
+                />
+              ))}
+            </SectionContent>
+          </Section>
+        ))}
+
+        {query.hasNextPage ? (
+          <Button
+            variant="outline"
+            disabled={query.isFetchingNextPage}
+            onPress={loadMore}
+          >
+            {query.isFetchingNextPage ? (
+              <Spinner className="text-foreground" />
+            ) : null}
+            <Text>Load more</Text>
+          </Button>
+        ) : null}
+      </RefetchScroll>
+    </>
   );
 }

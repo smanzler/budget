@@ -6,8 +6,10 @@ import db from "../../db";
 import { HouseholdMembers, LedgerEntries, Settlements } from "../../db/schema";
 import { decodeCursor, paginate } from "../../lib/keyset";
 import { lockHousehold, settlementRef } from "../../lib/ledger";
+import { notify } from "../../lib/notify";
 import { toIso } from "../../lib/serialize";
 import { householdProcedure, router } from "../../lib/trpc";
+import type { NotificationPayload } from "@budget/shared";
 
 /**
  * A ref of its own, deliberately not `settlement:<id>`.
@@ -21,6 +23,15 @@ const voidRef = (settlementId: string) => `${settlementRef(settlementId)}:void`;
 /** Both parties come out of the same table, so the list needs two of it. */
 const Payer = alias(HouseholdMembers, "payer");
 const Payee = alias(HouseholdMembers, "payee");
+
+/**
+ * The latest date a payment may claim, as `YYYY-MM-DD`.
+ *
+ * Computed per call rather than at module load: the process outlives a day, and
+ * a bound frozen at boot starts refusing today's payments tomorrow.
+ */
+const tomorrow = () =>
+  new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
 export const settlementsRouter = router({
   /**
@@ -40,7 +51,16 @@ export const settlementsRouter = router({
         settlementId: z.uuid(),
         toMemberId: z.uuid(),
         amountCents: z.int().positive(),
-        settledOn: z.iso.date(),
+        /**
+         * Bounded, because it is free text on the client and it orders the
+         * activity feed's keyset. A payment dated 2099 pins itself to the top of
+         * every feed forever, which one fat finger — or one bored housemate —
+         * should not be able to do. A day of slack absorbs a device clock in a
+         * timezone ahead of the server's.
+         */
+        settledOn: z.iso.date().refine((value) => value <= tomorrow(), {
+          message: "A payment can't be dated in the future",
+        }),
         method: z.string().max(40).optional(),
         note: z.string().max(280).optional(),
       }),
@@ -70,7 +90,10 @@ export const settlementsRouter = router({
       const [payee, household] = await Promise.all([
         db.query.HouseholdMembers.findFirst({
           where: { id: toMemberId, householdId },
-          columns: { id: true },
+          // `userId` for the notification below. Nullable: an invited seat
+          // nobody has claimed is still payable, and there is simply nobody to
+          // tell in that case.
+          columns: { id: true, userId: true },
         }),
         db.query.Households.findFirst({
           where: { id: householdId },
@@ -89,7 +112,7 @@ export const settlementsRouter = router({
         });
       }
 
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         await lockHousehold(tx, householdId);
 
         const [created] = await tx
@@ -162,6 +185,29 @@ export const settlementsRouter = router({
 
         return { settlementId, created: true };
       });
+
+      // After the commit, and only for a write that actually happened. A replay
+      // returns `created: false` and must not notify again — the dedupe key
+      // would cover it, but a second push for a payment already announced is
+      // worth not depending on that.
+      if (result.created) {
+        await tellPayee({
+          userId: payee.userId,
+          payload: {
+            type: "settlement_recorded",
+            data: {
+              settlementId,
+              householdId,
+              fromDisplayName: member.displayName,
+              amountCents,
+              isoCurrencyCode: household.defaultCurrency,
+            },
+          },
+          dedupeKey: `settlement_recorded:${settlementId}`,
+        });
+      }
+
+      return result;
     }),
 
   list: householdProcedure
@@ -263,7 +309,7 @@ export const settlementsRouter = router({
       const { householdId, member } = opts.ctx;
       const { settlementId } = opts.input;
 
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         await lockHousehold(tx, householdId);
 
         const [voided] = await tx
@@ -365,7 +411,78 @@ export const settlementsRouter = router({
           createdByMemberId: member.id,
         });
 
-        return { settlementId };
+        return {
+          settlementId,
+          fromMemberId: original.debtorMemberId,
+          toMemberId: original.creditorMemberId,
+          // The posted entry is negative — a repayment reduces the debt — and
+          // the notification states a payment amount, so it travels as a
+          // magnitude.
+          amountCents: Math.abs(original.amountCents),
+          isoCurrencyCode: original.isoCurrencyCode,
+        };
       });
+
+      // Both parties, minus whoever just did it. An owner may void a payment
+      // they were not part of, in which case the payer needs telling as much as
+      // the payee does — their balance moved back up either way.
+      const others = [result.fromMemberId, result.toMemberId].filter(
+        (id) => id !== member.id,
+      );
+
+      if (others.length > 0) {
+        const seats = await db.query.HouseholdMembers.findMany({
+          where: { householdId, id: { in: others } },
+          columns: { userId: true },
+        });
+
+        await Promise.all(
+          seats.map((seat) =>
+            tellPayee({
+              userId: seat.userId,
+              payload: {
+                type: "settlement_voided",
+                data: {
+                  settlementId,
+                  householdId,
+                  voidedByDisplayName: member.displayName,
+                  amountCents: result.amountCents,
+                  isoCurrencyCode: result.isoCurrencyCode,
+                },
+              },
+              dedupeKey: `settlement_voided:${settlementId}`,
+            }),
+          ),
+        );
+      }
+
+      return { settlementId: result.settlementId };
     }),
 });
+
+/**
+ * Notifies one party about a settlement, if there is anybody there to notify.
+ *
+ * Never lets a push failure fail the mutation: the money is already committed,
+ * and turning "we could not reach Expo" into a 500 would tell the payer their
+ * repayment did not record when it did — after which they record it again. The
+ * same reasoning as the signup hook's `ensureHousehold` catch in lib/auth.ts.
+ */
+const tellPayee = async (args: {
+  /** Null for an invited seat nobody has claimed — nothing to do. */
+  userId: string | null;
+  payload: NotificationPayload;
+  dedupeKey: string;
+}) => {
+  if (!args.userId) return;
+
+  try {
+    await notify({
+      userId: args.userId,
+      payload: args.payload,
+      dedupeKey: args.dedupeKey,
+    });
+  } catch (caught) {
+    console.error("failed to send a settlement notification", caught);
+  }
+};

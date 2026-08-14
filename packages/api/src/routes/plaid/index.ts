@@ -1,10 +1,12 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { CountryCode, Products } from "plaid";
 import { z } from "zod";
 import db from "../../db";
 import {
   BankAccounts,
+  HouseholdMembers,
+  Households,
   LedgerEntries,
   PlaidItems,
   Transactions,
@@ -158,6 +160,7 @@ export const plaidRouter = router({
         itemId: item.id,
         duplicateOf: await findDuplicateAccount({
           householdId,
+          userId: user.id,
           plaidItemId: item.id,
           institutionId: item.institutionId,
           accounts,
@@ -545,6 +548,19 @@ const fetchInstitution = async (accessToken: string) => {
  */
 const findDuplicateAccount = async (args: {
   householdId: string;
+  /**
+   * The linking user, so the search can cross into their *other* households.
+   *
+   * This is the sharper case by far, and it only became reachable when a user
+   * could hold two active seats. Plaid mints a fresh `item_id`, `account_id`s and
+   * `transaction_id`s for every Link flow, so nothing in the schema notices the
+   * same real card connected in two households — and one $200 charge then raises
+   * $100 against a partner in one household and $100 against roommates in the
+   * other, with the linker collecting twice. `assertSplitsBalance` and
+   * `verifyLedger` are both scoped to a single household, so both read clean.
+   * This warning is the only thing that sees it.
+   */
+  userId: string;
   plaidItemId: string;
   institutionId: string | null;
   accounts: {
@@ -553,7 +569,7 @@ const findDuplicateAccount = async (args: {
     subtype: string | null;
   }[];
 }) => {
-  const { householdId, plaidItemId, institutionId, accounts } = args;
+  const { householdId, userId, plaidItemId, institutionId, accounts } = args;
 
   // Without an institution to anchor it, "a checking account ending 4242" is a
   // coincidence rather than a duplicate.
@@ -576,12 +592,41 @@ const findDuplicateAccount = async (args: {
   if (matches.length === 0) return null;
 
   const [duplicate] = await db
-    .select({ id: BankAccounts.id })
+    // Enough to name it: an id alone leaves the client with a warning it cannot
+    // phrase, which is how this ended up computed and then discarded.
+    .select({
+      id: BankAccounts.id,
+      name: BankAccounts.name,
+      mask: BankAccounts.mask,
+      institutionName: PlaidItems.institutionName,
+      householdName: Households.name,
+      /**
+       * Which of the two warnings to show. A duplicate inside this household
+       * doubles up a list; one in another household doubles up a *debt*, and the
+       * copy has to say so.
+       */
+      inAnotherHousehold: ne(BankAccounts.householdId, householdId),
+    })
     .from(BankAccounts)
     .innerJoin(PlaidItems, eq(PlaidItems.id, BankAccounts.plaidItemId))
+    .innerJoin(Households, eq(Households.id, BankAccounts.householdId))
     .where(
       and(
-        eq(BankAccounts.householdId, householdId),
+        // Every household this user actually sits in, not just the active one —
+        // and never wider than that, or the warning would disclose that some
+        // stranger banks at the same place.
+        inArray(
+          BankAccounts.householdId,
+          db
+            .select({ householdId: HouseholdMembers.householdId })
+            .from(HouseholdMembers)
+            .where(
+              and(
+                eq(HouseholdMembers.userId, userId),
+                eq(HouseholdMembers.status, "active"),
+              ),
+            ),
+        ),
         ne(BankAccounts.plaidItemId, plaidItemId),
         eq(PlaidItems.institutionId, institutionId),
         // An already-muted duplicate is not what the new one would double up
@@ -590,9 +635,14 @@ const findDuplicateAccount = async (args: {
         or(...matches),
       ),
     )
-    // Oldest match, so the warning names the original connection.
-    .orderBy(BankAccounts.createdAt)
+    // Another household first: that is the one that silently doubles a debt, and
+    // it has no in-app remedy the way `excluded_at` is one for a same-household
+    // collision. Oldest match within that, so the warning names the original.
+    .orderBy(
+      desc(sql`${BankAccounts.householdId} <> ${householdId}`),
+      BankAccounts.createdAt,
+    )
     .limit(1);
 
-  return duplicate?.id ?? null;
+  return duplicate ?? null;
 };

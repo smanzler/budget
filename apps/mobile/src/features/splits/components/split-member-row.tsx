@@ -70,7 +70,7 @@ export function SplitMemberRow({
           selectTextOnFocus
           placeholder="0.00"
           aria-label={`${name} share`}
-          className="h-9 w-24 text-right tabular-nums"
+          className="min-h-9 w-24 text-right tabular-nums"
         />
       ) : null}
 

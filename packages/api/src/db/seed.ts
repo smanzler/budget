@@ -18,6 +18,7 @@ async function main() {
     NotificationDeliveries: { count: 0 },
     PushTokens: { count: 0 },
     Households: { count: 0 },
+    UserHouseholdPrefs: { count: 0 },
     HouseholdMembers: { count: 0 },
     HouseholdInvites: { count: 0 },
     PlaidItems: { count: 0 },

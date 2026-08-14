@@ -1,9 +1,10 @@
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { useHousehold } from "@/features/household/hooks/use-household";
 import { usePushNotificationRegistration } from "@/features/notifications/hooks/use-push-notification-registration";
 import { Link, Stack } from "expo-router";
 import { Landmark, Users } from "lucide-react-native";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 
 export default function Layout() {
   usePushNotificationRegistration();
@@ -25,20 +26,30 @@ export default function Layout() {
         options={{
           title: "Transactions",
           // A View, not a fragment: the header slot lays out a single child, so
-          // two bare Pressables would stack instead of sitting side by side.
+          // two bare buttons would stack instead of sitting side by side.
+          // Spacing comes from each button's own square box — `size="icon"`
+          // centers the glyph in a fixed 40pt tap target — not from a gap.
           headerRight: () => (
-            <View className="flex-row items-center gap-5">
+            <View className="flex-row items-center">
               {isShared ? (
                 <Link href="/balances" asChild>
-                  <Pressable hitSlop={12} accessibilityLabel="Balances">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    accessibilityLabel="Balances"
+                  >
                     <Icon as={Users} />
-                  </Pressable>
+                  </Button>
                 </Link>
               ) : null}
               <Link href="/accounts" asChild>
-                <Pressable hitSlop={12} accessibilityLabel="Accounts">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  accessibilityLabel="Accounts"
+                >
                   <Icon as={Landmark} />
-                </Pressable>
+                </Button>
               </Link>
             </View>
           ),
@@ -46,6 +57,7 @@ export default function Layout() {
       />
       <Stack.Screen name="accounts" options={{ title: "Accounts" }} />
       <Stack.Screen name="balances" options={{ title: "Balances" }} />
+      <Stack.Screen name="payments" options={{ title: "Payments" }} />
       {/* Titled from the screen itself — it names the person you're square
           with, which the layout has no way to know here. */}
       <Stack.Screen name="balances/[memberId]" />
@@ -55,6 +67,7 @@ export default function Layout() {
         options={{ title: "Transaction", presentation: "modal" }}
       />
       <Stack.Screen name="join/[code]" options={{ title: "Join" }} />
+      <Stack.Screen name="join/index" options={{ title: "Join" }} />
     </Stack>
   );
 }

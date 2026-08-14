@@ -1,7 +1,7 @@
-import { fromCents } from "@budget/shared";
+import { fromCents, inviteInputSchema } from "@budget/shared";
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, gt, isNull, ne, sql } from "drizzle-orm";
-import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
+import { alias, type PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import db from "../../db";
@@ -11,10 +11,15 @@ import {
   HouseholdMembers,
   Households,
   LedgerEntries,
+  PlaidItems,
   Transactions,
   users,
 } from "../../db/schema";
+import { env } from "../../env";
+import { renderInviteEmail } from "../../lib/invite-email";
+import { resolveActiveMember, setActiveHousehold } from "../../lib/household";
 import { lockHousehold } from "../../lib/ledger";
+import { mailer } from "../../lib/mailer";
 import { toIso } from "../../lib/serialize";
 import {
   householdProcedure,
@@ -26,7 +31,20 @@ import {
 /** `YYYY-MM-DD` — the shape every `date` column in this schema round-trips. */
 const today = () => new Date().toISOString().slice(0, 10);
 
+/** `Amex`, `Amex and Chase`, `Amex, Chase and Ally` — for a refusal sentence. */
+const listNames = (names: string[]) =>
+  names.length <= 1
+    ? (names[0] ?? "an account")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * `invites.mine` names two different seats off one invite — who sent it and
+ * which seat it fills — so it needs two copies of the members table.
+ */
+const Inviter = alias(HouseholdMembers, "inviter");
+const Seat = alias(HouseholdMembers, "seat");
 
 /**
  * Base32 minus every glyph a human misreads off a screen: no 0/O, no 1/I/L.
@@ -54,45 +72,285 @@ const inviteCode = () => {
 };
 
 /**
- * "Empty" means nothing anyone could lose by walking away from it: no bank
- * connections, no transactions, no ledger history, nobody else in the seat list.
- * Anything more and moving households has to be a deliberate act rather than a
- * side effect of tapping a link — the old household is not deleted here, and its
- * data would simply become unreachable.
+ * Retires a seat, cancelling what it owes if asked to.
+ *
+ * Shared by `removeMember` and `leave`, which differ only in who decides and in
+ * who inherits — everything below is the same money problem either way, and the
+ * ordering inside it is load-bearing:
+ *
+ * 1. Accounts before balances. An account still owned by this seat keeps
+ *    stamping `creditor_member_id` onto new transactions, so on an
+ *    `equal`-splitting account it raises fresh debt owed to the very seat whose
+ *    balance is about to be cancelled. Refusing *after* the write-off would
+ *    leave a household that has cancelled a real debt and still cannot retire
+ *    the seat.
+ * 2. The caller must hold `lockHousehold` already. The write-off is
+ *    read-then-append against an append-only table, and a share posted between
+ *    the two halves would be zeroed without ever having been counted.
  */
-const householdHasData = async (
-  householdId: string,
-  exceptMemberId: string,
+const retireSeat = async (
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  args: {
+    householdId: string;
+    /** The seat being retired. */
+    target: { id: string; displayName: string };
+    /** Whose name goes on the adjustment entries. */
+    actorMemberId: string;
+    /** `self` when somebody is leaving; changes every sentence below. */
+    voice: "self" | "other";
+    writeOffBalance: boolean | undefined;
+  },
 ) => {
-  const { rows } = await db.execute<{ has_data: boolean }>(sql`
+  const { householdId, target, voice } = args;
+  const subject = voice === "self" ? "You" : target.displayName;
+
+  const owned = await tx
+    .select({ name: BankAccounts.name })
+    .from(BankAccounts)
+    .where(
+      and(
+        eq(BankAccounts.householdId, householdId),
+        eq(BankAccounts.ownerMemberId, target.id),
+      ),
+    )
+    .orderBy(BankAccounts.name);
+
+  if (owned.length > 0) {
+    const names = listNames(owned.map((account) => account.name));
+    const it = owned.length === 1 ? "it" : "them";
+
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        voice === "self"
+          ? `You still own ${names}. Hand ${it} to somebody else first — new transactions on an account are owed to whoever owns it.`
+          : `${subject} still owns ${names}. Reassign ${it} to somebody else first — new transactions on an account are owed to whoever owns it.`,
+    });
+  }
+
+  const outstanding = await tx.execute<{
+    other_member_id: string;
+    iso_currency_code: string;
+    cents: string;
+  }>(sql`
     select
-      exists (select 1 from plaid_items where household_id = ${householdId})
-      or exists (select 1 from transactions where household_id = ${householdId})
-      or exists (select 1 from ledger_entries where household_id = ${householdId})
-      or exists (
-        select 1 from household_members
-        where household_id = ${householdId} and id <> ${exceptMemberId}
-      ) as has_data
+      case when debtor_member_id = ${target.id}
+           then creditor_member_id else debtor_member_id end
+        as other_member_id,
+      iso_currency_code,
+      sum(case when debtor_member_id = ${target.id}
+               then amount_cents else -amount_cents end)::text
+        as cents
+    from ledger_entries
+    where household_id = ${householdId}
+      and (debtor_member_id = ${target.id} or creditor_member_id = ${target.id})
+    group by 1, 2
+    having sum(case when debtor_member_id = ${target.id}
+                    then amount_cents else -amount_cents end) <> 0
   `);
 
-  // Refuse when the probe itself failed to answer.
-  return rows[0]?.has_data ?? true;
+  // `sum()` arrives from node-postgres as a string, never a number.
+  // Signed from the leaving seat's side: positive means they owe.
+  const pairs = outstanding.rows.map((row) => ({
+    otherMemberId: row.other_member_id,
+    currency: row.iso_currency_code,
+    cents: Number(row.cents),
+  }));
+
+  if (pairs.length > 0 && args.writeOffBalance !== true) {
+    const names = new Map(
+      (
+        await tx
+          .select({
+            id: HouseholdMembers.id,
+            displayName: HouseholdMembers.displayName,
+          })
+          .from(HouseholdMembers)
+          .where(eq(HouseholdMembers.householdId, householdId))
+      ).map((seat) => [seat.id, seat.displayName]),
+    );
+
+    const summary = pairs
+      .map((pair) => {
+        const other = names.get(pair.otherMemberId) ?? "another member";
+        const amount = `${fromCents(Math.abs(pair.cents))} ${pair.currency}`;
+        const owes = voice === "self" ? "still owe" : "still owes";
+
+        return pair.cents > 0
+          ? `${subject} ${owes} ${other} ${amount}`
+          : `${other} still owes ${voice === "self" ? "you" : subject} ${amount}`;
+      })
+      .join("; ");
+
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${summary}. Write the balance off to ${
+        voice === "self" ? "leave" : "remove them"
+      } anyway.`,
+    });
+  }
+
+  if (pairs.length > 0) {
+    const externalRef = `adjustment:${target.id}:${randomUUID()}`;
+    const effectiveDate = today();
+
+    await tx.insert(LedgerEntries).values(
+      pairs.map((pair) => ({
+        householdId,
+        // Same direction as the balance it cancels, opposite sign — a ledger row
+        // is never updated or deleted, so zeroing a pair means appending its
+        // negation.
+        debtorMemberId: pair.cents > 0 ? target.id : pair.otherMemberId,
+        creditorMemberId: pair.cents > 0 ? pair.otherMemberId : target.id,
+        amountCents: -Math.abs(pair.cents),
+        isoCurrencyCode: pair.currency,
+        kind: "adjustment" as const,
+        externalRef,
+        memo: `Balance written off when ${target.displayName} ${
+          voice === "self" ? "left" : "was removed"
+        }`,
+        effectiveDate,
+        createdByMemberId: args.actorMemberId,
+      })),
+    );
+  }
+
+  // An outstanding code for this seat would set it straight back to `active` and
+  // undo the retirement.
+  await tx
+    .update(HouseholdInvites)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(HouseholdInvites.householdId, householdId),
+        eq(HouseholdInvites.memberId, target.id),
+        isNull(HouseholdInvites.redeemedAt),
+        isNull(HouseholdInvites.revokedAt),
+      ),
+    );
+
+  await tx
+    .update(HouseholdMembers)
+    .set({ status: "removed", removedAt: new Date() })
+    .where(
+      and(
+        eq(HouseholdMembers.id, target.id),
+        eq(HouseholdMembers.householdId, householdId),
+      ),
+    );
+
+  // Magnitudes, summed per currency: two pairs can point in opposite directions,
+  // so a signed total would report a write-off of nothing.
+  const byCurrency = new Map<string, number>();
+
+  for (const pair of pairs) {
+    byCurrency.set(
+      pair.currency,
+      (byCurrency.get(pair.currency) ?? 0) + Math.abs(pair.cents),
+    );
+  }
+
+  return {
+    writtenOff:
+      pairs.length === 0
+        ? null
+        : [...byCurrency].map(([currency, cents]) => ({ cents, currency })),
+  };
 };
 
 export const householdRouter = router({
+  /**
+   * Every household this user can act in, for the switcher.
+   *
+   * `protectedProcedure`, not `householdProcedure`: this is the query that has to
+   * work *before* a household is chosen, and resolving one here would bootstrap
+   * one as a side effect of merely listing.
+   */
+  list: protectedProcedure.query(async (opts) => {
+    const { user } = opts.ctx;
+
+    const rows = await db
+      .select({
+        householdId: HouseholdMembers.householdId,
+        memberId: HouseholdMembers.id,
+        name: Households.name,
+        role: HouseholdMembers.role,
+        joinedAt: HouseholdMembers.joinedAt,
+      })
+      .from(HouseholdMembers)
+      .innerJoin(Households, eq(Households.id, HouseholdMembers.householdId))
+      .where(
+        and(
+          eq(HouseholdMembers.userId, user.id),
+          eq(HouseholdMembers.status, "active"),
+        ),
+      )
+      .orderBy(asc(HouseholdMembers.createdAt));
+
+    // Resolved through the same path a request uses, so the highlighted row in
+    // the switcher is always the household the next query will actually answer
+    // for — including when the stored preference has fallen back.
+    const active = await resolveActiveMember(user.id);
+
+    return rows.map((row) => ({
+      ...row,
+      joinedAt: toIso(row.joinedAt),
+      isActive: row.memberId === active?.id,
+    }));
+  }),
+
+  /**
+   * Switches which household this user is acting in.
+   *
+   * Membership is proven here rather than trusted, so the stored preference can
+   * never widen what the caller can reach: an id they hold no active seat in is
+   * refused, and `resolveActiveMember` re-checks the seat on every request
+   * afterwards anyway.
+   */
+  setActive: protectedProcedure
+    .input(z.object({ householdId: z.uuid() }))
+    .mutation(async (opts) => {
+      const { user } = opts.ctx;
+      const { householdId } = opts.input;
+
+      const seat = await db.query.HouseholdMembers.findFirst({
+        where: { userId: user.id, householdId, status: "active" },
+        columns: { id: true },
+      });
+
+      if (!seat) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "You are not a member of that household",
+        });
+      }
+
+      await setActiveHousehold(db, user.id, householdId);
+
+      return { householdId, memberId: seat.id };
+    }),
   get: householdProcedure.query(async (opts) => {
     const { householdId, member } = opts.ctx;
 
-    const household = await db.query.Households.findFirst({
-      where: { id: householdId },
-      columns: { id: true, name: true, defaultCurrency: true },
-      with: {
-        members: {
-          columns: { id: true, displayName: true, status: true, role: true },
-          orderBy: { createdAt: "asc" },
+    const [household, posted] = await Promise.all([
+      db.query.Households.findFirst({
+        where: { id: householdId },
+        columns: { id: true, name: true, defaultCurrency: true },
+        with: {
+          members: {
+            columns: { id: true, displayName: true, status: true, role: true },
+            orderBy: { createdAt: "asc" },
+          },
         },
-      },
-    });
+      }),
+      // Rides `ledger_entries_household_ref_idx`, and it is what lets the client
+      // render the currency as fixed instead of discovering it through a
+      // refusal after the picker has already been opened.
+      db.query.LedgerEntries.findFirst({
+        where: { householdId },
+        columns: { id: true },
+      }),
+    ]);
 
     if (!household) {
       throw new TRPCError({
@@ -105,6 +363,8 @@ export const householdRouter = router({
       id: household.id,
       name: household.name,
       defaultCurrency: household.defaultCurrency,
+      /** Once anything has been posted, `setCurrency` refuses — see there. */
+      currencyLocked: posted !== undefined,
       myMemberId: member.id,
       // Removed seats are included: the ledger and the activity feed still
       // reference them, so the client needs a name for every id it can meet.
@@ -137,153 +397,245 @@ export const householdRouter = router({
       return household;
     }),
 
-  invite: ownerProcedure
+  /**
+   * The household's currency, changeable only while it has no history.
+   *
+   * Load-bearing rather than cosmetic: `resolveDefaultSplit` leaves any
+   * transaction whose currency differs from this one whole on the payer
+   * (lib/splits.ts), so a household stuck on the wrong currency auto-splits
+   * nothing and reads as a broken app rather than a misconfigured one. Nothing
+   * set this after `ensureHousehold` took the column default until now.
+   *
+   * Frozen once a ledger entry exists, and that is the whole safety argument.
+   * Entries freeze their currency at post time and `pairBalances` groups by it,
+   * so a later change cannot rewrite them — it would strand the old balance in a
+   * currency `settlements.create`, which always mints in the *current* default,
+   * could never pay off. Refusing is the only honest answer; converting would
+   * need an FX rate this app does not have.
+   */
+  setCurrency: ownerProcedure
     .input(
       z.object({
-        email: z.email(),
-        displayName: z.string().trim().min(1).max(80),
+        /**
+         * ISO 4217. Uppercased here rather than trusted, because the column
+         * feeds equality tests against Plaid's `iso_currency_code`, which is
+         * always upper case — a lowercase 'usd' would silently match nothing
+         * and disable auto-splitting exactly as a wrong code would.
+         */
+        currency: z
+          .string()
+          .trim()
+          .toUpperCase()
+          .regex(/^[A-Z]{3}$/, "Use a three-letter currency code, like USD"),
       }),
     )
     .mutation(async (opts) => {
-      const { householdId, member } = opts.ctx;
-      const { displayName } = opts.input;
+      const { householdId } = opts.ctx;
+      const { currency } = opts.input;
 
-      const email = opts.input.email.trim().toLowerCase();
-      const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
+      const posted = await db.query.LedgerEntries.findFirst({
+        where: { householdId },
+        columns: { id: true },
+      });
 
-      return db.transaction(async (tx) => {
-        // `household_invites_open_email_key` makes a second open invite for the
-        // same address a constraint violation rather than a no-op, so reusing
-        // the live row has to be read-then-write. The lock is what keeps a
-        // double-tap from 500ing in between the two halves.
-        await lockHousehold(tx, householdId);
+      if (posted) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "This household already has balances, so its currency is fixed. Settle up and remove the shared accounts first, or start a new household.",
+        });
+      }
 
-        // The partial unique index only covers *open* invites, so once one has
-        // been redeemed nothing stops a second invite for the same address —
-        // which would mint a seat `acceptInvite` then refuses to fill, leaving
-        // a permanent phantom "Invited" row in the members list.
-        const [claimed] = await tx
-          .select({ id: HouseholdMembers.id })
-          .from(HouseholdMembers)
-          .innerJoin(users, eq(users.id, HouseholdMembers.userId))
+      const [household] = await db
+        .update(Households)
+        .set({ defaultCurrency: currency })
+        .where(eq(Households.id, householdId))
+        .returning({
+          id: Households.id,
+          defaultCurrency: Households.defaultCurrency,
+        });
+
+      if (!household) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Household not found",
+        });
+      }
+
+      return household;
+    }),
+
+  invite: ownerProcedure.input(inviteInputSchema).mutation(async (opts) => {
+    const { householdId, member } = opts.ctx;
+    const { displayName } = opts.input;
+
+    const email = opts.input.email.trim().toLowerCase();
+    const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
+
+    const invited = await db.transaction(async (tx) => {
+      // `household_invites_open_email_key` makes a second open invite for the
+      // same address a constraint violation rather than a no-op, so reusing
+      // the live row has to be read-then-write. The lock is what keeps a
+      // double-tap from 500ing in between the two halves.
+      await lockHousehold(tx, householdId);
+
+      // The partial unique index only covers *open* invites, so once one has
+      // been redeemed nothing stops a second invite for the same address —
+      // which would mint a seat `acceptInvite` then refuses to fill, leaving
+      // a permanent phantom "Invited" row in the members list.
+      const [claimed] = await tx
+        .select({ id: HouseholdMembers.id })
+        .from(HouseholdMembers)
+        .innerJoin(users, eq(users.id, HouseholdMembers.userId))
+        .where(
+          and(
+            eq(HouseholdMembers.householdId, householdId),
+            eq(HouseholdMembers.status, "active"),
+            sql`lower(${users.email}) = ${email}`,
+          ),
+        )
+        .limit(1);
+
+      if (claimed) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "They are already in this household",
+        });
+      }
+
+      const [open] = await tx
+        .select({
+          id: HouseholdInvites.id,
+          memberId: HouseholdInvites.memberId,
+          code: HouseholdInvites.code,
+        })
+        .from(HouseholdInvites)
+        .where(
+          and(
+            eq(HouseholdInvites.householdId, householdId),
+            eq(HouseholdInvites.email, email),
+            isNull(HouseholdInvites.redeemedAt),
+            isNull(HouseholdInvites.revokedAt),
+          ),
+        )
+        .limit(1);
+
+      if (open) {
+        // Re-inviting extends the live invite rather than minting a second
+        // seat — the first one may already be carrying splits.
+        await tx
+          .update(HouseholdInvites)
+          .set({ expiresAt })
           .where(
             and(
-              eq(HouseholdMembers.householdId, householdId),
-              eq(HouseholdMembers.status, "active"),
-              sql`lower(${users.email}) = ${email}`,
-            ),
-          )
-          .limit(1);
-
-        if (claimed) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "They are already in this household",
-          });
-        }
-
-        const [open] = await tx
-          .select({
-            id: HouseholdInvites.id,
-            memberId: HouseholdInvites.memberId,
-            code: HouseholdInvites.code,
-          })
-          .from(HouseholdInvites)
-          .where(
-            and(
+              eq(HouseholdInvites.id, open.id),
               eq(HouseholdInvites.householdId, householdId),
-              eq(HouseholdInvites.email, email),
-              isNull(HouseholdInvites.redeemedAt),
-              isNull(HouseholdInvites.revokedAt),
             ),
-          )
-          .limit(1);
+          );
 
-        if (open) {
-          // Re-inviting extends the live invite rather than minting a second
-          // seat — the first one may already be carrying splits.
-          await tx
-            .update(HouseholdInvites)
-            .set({ expiresAt })
-            .where(
-              and(
-                eq(HouseholdInvites.id, open.id),
-                eq(HouseholdInvites.householdId, householdId),
-              ),
-            );
-
-          // Fixing a typo in the name is the other reason to re-invite. Guarded
-          // on `invited` so this path can never rename a claimed seat.
-          await tx
-            .update(HouseholdMembers)
-            .set({ displayName })
-            .where(
-              and(
-                eq(HouseholdMembers.id, open.memberId),
-                eq(HouseholdMembers.householdId, householdId),
-                eq(HouseholdMembers.status, "invited"),
-              ),
-            );
-
-          return {
-            inviteId: open.id,
-            memberId: open.memberId,
-            code: open.code,
-            expiresAt: expiresAt.toISOString(),
-          };
-        }
-
-        // The seat is created up front and exists whether or not the invite is
-        // ever accepted: splitting tonight's dinner with a roommate cannot wait
-        // on them installing the app.
-        const [seat] = await tx
-          .insert(HouseholdMembers)
-          .values({
-            householdId,
-            displayName,
-            role: "member",
-            status: "invited",
-          })
-          .returning({ id: HouseholdMembers.id });
-
-        if (!seat) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to create the member seat",
-          });
-        }
-
-        const [invite] = await tx
-          .insert(HouseholdInvites)
-          .values({
-            householdId,
-            memberId: seat.id,
-            email,
-            code: inviteCode(),
-            invitedByMemberId: member.id,
-            expiresAt,
-          })
-          .returning({
-            id: HouseholdInvites.id,
-            code: HouseholdInvites.code,
-            expiresAt: HouseholdInvites.expiresAt,
-          });
-
-        if (!invite) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to create the invite",
-          });
-        }
+        // Fixing a typo in the name is the other reason to re-invite. Guarded
+        // on `invited` so this path can never rename a claimed seat.
+        await tx
+          .update(HouseholdMembers)
+          .set({ displayName })
+          .where(
+            and(
+              eq(HouseholdMembers.id, open.memberId),
+              eq(HouseholdMembers.householdId, householdId),
+              eq(HouseholdMembers.status, "invited"),
+            ),
+          );
 
         return {
-          inviteId: invite.id,
-          memberId: seat.id,
-          code: invite.code,
-          expiresAt: invite.expiresAt.toISOString(),
+          inviteId: open.id,
+          memberId: open.memberId,
+          code: open.code,
+          expiresAt: expiresAt.toISOString(),
         };
+      }
+
+      // The seat is created up front and exists whether or not the invite is
+      // ever accepted: splitting tonight's dinner with a roommate cannot wait
+      // on them installing the app.
+      const [seat] = await tx
+        .insert(HouseholdMembers)
+        .values({
+          householdId,
+          displayName,
+          role: "member",
+          status: "invited",
+        })
+        .returning({ id: HouseholdMembers.id });
+
+      if (!seat) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create the member seat",
+        });
+      }
+
+      const [invite] = await tx
+        .insert(HouseholdInvites)
+        .values({
+          householdId,
+          memberId: seat.id,
+          email,
+          code: inviteCode(),
+          invitedByMemberId: member.id,
+          expiresAt,
+        })
+        .returning({
+          id: HouseholdInvites.id,
+          code: HouseholdInvites.code,
+          expiresAt: HouseholdInvites.expiresAt,
+        });
+
+      if (!invite) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create the invite",
+        });
+      }
+
+      return {
+        inviteId: invite.id,
+        memberId: seat.id,
+        code: invite.code,
+        expiresAt: invite.expiresAt.toISOString(),
+      };
+    });
+
+    // After the commit, and never fatal. The invite is on file and the client
+    // still has the share sheet and `invites.mine` as delivery paths, so a dead
+    // SMTP host must not turn a successful invite into an error the owner will
+    // answer by inviting again — which extends the same row and re-sends the
+    // same code, but only after they have been told it failed.
+    try {
+      const household = await db.query.Households.findFirst({
+        where: { id: householdId },
+        columns: { name: true },
       });
-    }),
+
+      const { subject, html, text } = renderInviteEmail({
+        householdName: household?.name ?? "a household",
+        invitedByName: member.displayName,
+        code: invited.code,
+        expiresInDays: Math.round(INVITE_TTL_MS / (24 * 60 * 60 * 1000)),
+      });
+
+      await mailer.sendMail({
+        from: env.SMTP_FROM,
+        to: email,
+        subject,
+        html,
+        text,
+      });
+    } catch (caught) {
+      console.error("failed to email an invite", caught);
+    }
+
+    return invited;
+  }),
 
   invites: router({
     list: householdProcedure.query(async (opts) => {
@@ -346,6 +698,62 @@ export const householdRouter = router({
         // invite you took back, and `removeMember` is the way to retire them.
         return { inviteId: revoked.id };
       }),
+
+    /**
+     * The invites waiting for *you*.
+     *
+     * A `protectedProcedure` and never a `householdProcedure`, for the reason
+     * spelled out on `acceptInvite`: resolving a household bootstraps one, and
+     * asking "who has invited me?" must not have creating a household as a side
+     * effect.
+     *
+     * This does not weaken the code. Authorization for accepting is already the
+     * verified-email match — the code is only a capability that travels — and
+     * this query is scoped by that same predicate, so it discloses nothing to a
+     * caller who could not already accept. It is strictly better in two ways:
+     * the code stops travelling through screenshots and group chats (which today
+     * also leaks the invitee's address, see the share sheet on the client), and
+     * "I pasted the code into the wrong account" stops being reachable.
+     *
+     * Verified sessions only, matching accept. Listing to an unverified one
+     * would disclose "somebody invited this address" to a caller who has never
+     * demonstrated they own it.
+     */
+    mine: protectedProcedure.query(async (opts) => {
+      const { user } = opts.ctx;
+
+      if (!user.emailVerified) return [];
+
+      const rows = await db
+        .select({
+          id: HouseholdInvites.id,
+          expiresAt: HouseholdInvites.expiresAt,
+          householdName: Households.name,
+          invitedByName: Inviter.displayName,
+          /** The seat's name, which the inviter chose — "Sam", not your email. */
+          seatName: Seat.displayName,
+        })
+        .from(HouseholdInvites)
+        .innerJoin(Households, eq(Households.id, HouseholdInvites.householdId))
+        .innerJoin(Inviter, eq(Inviter.id, HouseholdInvites.invitedByMemberId))
+        .innerJoin(Seat, eq(Seat.id, HouseholdInvites.memberId))
+        .where(
+          and(
+            sql`lower(${HouseholdInvites.email}) = ${user.email.trim().toLowerCase()}`,
+            isNull(HouseholdInvites.redeemedAt),
+            isNull(HouseholdInvites.revokedAt),
+            // Unlike `list`, which keeps expired rows so an owner can re-send:
+            // an expired invite here is a button that cannot work.
+            gt(HouseholdInvites.expiresAt, sql`now()`),
+          ),
+        )
+        .orderBy(asc(HouseholdInvites.createdAt));
+
+      return rows.map((row) => ({
+        ...row,
+        expiresAt: row.expiresAt.toISOString(),
+      }));
+    }),
   }),
 
   /**
@@ -354,7 +762,19 @@ export const householdRouter = router({
    * from inside a competing household they never asked for.
    */
   acceptInvite: protectedProcedure
-    .input(z.object({ code: z.string() }))
+    .input(
+      z.union([
+        z.object({ code: z.string() }),
+        /**
+         * Accepting one off `invites.mine`, where there is no code to type.
+         *
+         * The id is deliberately **not** a bearer token: the verified-email match
+         * below runs identically for both inputs, so holding an invite id you
+         * were not sent gets the same `NOT_FOUND` as holding a stranger's code.
+         */
+        z.object({ inviteId: z.uuid() }),
+      ]),
+    )
     .mutation(async (opts) => {
       const { user } = opts.ctx;
 
@@ -371,10 +791,13 @@ export const householdRouter = router({
         });
       }
 
-      const code = opts.input.code.trim().toUpperCase();
-
+      // `code` is globally unique and `id` is the primary key, so either one
+      // identifies at most one invite without needing a household to scope it.
       const invite = await db.query.HouseholdInvites.findFirst({
-        where: { code },
+        where:
+          "code" in opts.input
+            ? { code: opts.input.code.trim().toUpperCase() }
+            : { id: opts.input.inviteId },
         columns: {
           id: true,
           householdId: true,
@@ -424,27 +847,31 @@ export const householdRouter = router({
         });
       }
 
-      const current = await db.query.HouseholdMembers.findFirst({
-        where: { userId: user.id, status: "active" },
-        orderBy: { createdAt: "asc" },
-        columns: { id: true, householdId: true },
+      // Joining is now additive: you keep every household you are already in and
+      // this one becomes the active choice.
+      //
+      // What used to be here was a refusal — "your current household still has
+      // bank connections, transactions or other members; leave it before joining
+      // another one" — followed by retiring the seat you arrived with. Both existed
+      // only because resolution picked your oldest active seat and two active
+      // seats were therefore ambiguous. Both were also a trap: the refusal's probe
+      // counted `invited` and `removed` seats with no status filter, `revokeInvite`
+      // deliberately keeps its seat, and no `leave` procedure existed — so one
+      // invite sent and taken back locked a user out of ever accepting one, and
+      // told them to do something the API could not do.
+      const alreadyIn = await db.query.HouseholdMembers.findFirst({
+        where: {
+          userId: user.id,
+          householdId: invite.householdId,
+          status: "active",
+        },
+        columns: { id: true },
       });
 
-      if (current?.householdId === invite.householdId) {
+      if (alreadyIn) {
         throw new TRPCError({
           code: "CONFLICT",
           message: "You are already a member of this household",
-        });
-      }
-
-      if (
-        current &&
-        (await householdHasData(current.householdId, current.id))
-      ) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message:
-            "Your current household still has bank connections, transactions or other members. Leave it before joining another one.",
         });
       }
 
@@ -499,21 +926,11 @@ export const householdRouter = router({
           });
         }
 
-        if (current) {
-          // The empty bootstrap household they arrived with. Retired, never
-          // deleted, and retiring it is not optional: `resolveMember` picks the
-          // oldest *active* seat, so leaving this one active would keep routing
-          // every later request to the household they just left.
-          await tx
-            .update(HouseholdMembers)
-            .set({ status: "removed", removedAt: new Date() })
-            .where(
-              and(
-                eq(HouseholdMembers.id, current.id),
-                eq(HouseholdMembers.userId, user.id),
-              ),
-            );
-        }
+        // Land them in the household they just joined rather than wherever they
+        // happened to be. This is the whole reason the old seat no longer has to
+        // be retired: the preference disambiguates two active seats, so nothing
+        // has to be destroyed to make resolution deterministic.
+        await setActiveHousehold(tx, user.id, redeemed.householdId);
 
         return { householdId: redeemed.householdId, memberId: seat.id };
       });
@@ -592,133 +1009,205 @@ export const householdRouter = router({
           }
         }
 
-        const outstanding = await tx.execute<{
-          other_member_id: string;
-          iso_currency_code: string;
-          cents: string;
-        }>(sql`
-          select
-            case when debtor_member_id = ${memberId}
-                 then creditor_member_id else debtor_member_id end
-              as other_member_id,
-            iso_currency_code,
-            sum(case when debtor_member_id = ${memberId}
-                     then amount_cents else -amount_cents end)::text
-              as cents
-          from ledger_entries
-          where household_id = ${householdId}
-            and (debtor_member_id = ${memberId} or creditor_member_id = ${memberId})
-          group by 1, 2
-          having sum(case when debtor_member_id = ${memberId}
-                          then amount_cents else -amount_cents end) <> 0
-        `);
-
-        // `sum()` arrives from node-postgres as a string, never a number.
-        // Signed from the leaving member's side: positive means they owe.
-        const pairs = outstanding.rows.map((row) => ({
-          otherMemberId: row.other_member_id,
-          currency: row.iso_currency_code,
-          cents: Number(row.cents),
-        }));
-
-        if (pairs.length > 0 && writeOffBalance !== true) {
-          const names = new Map(
-            (
-              await tx
-                .select({
-                  id: HouseholdMembers.id,
-                  displayName: HouseholdMembers.displayName,
-                })
-                .from(HouseholdMembers)
-                .where(eq(HouseholdMembers.householdId, householdId))
-            ).map((seat) => [seat.id, seat.displayName]),
+        // The accounts are all reassigned by the time this runs — `retireSeat`
+        // refuses otherwise — but the *item* still seeds `owner_member_id` onto
+        // any account Plaid discovers later, which would hand a removed seat a
+        // new account nobody asked it to own. That cannot raise debt on its own
+        // (a new account defaults to owner-only, which posts no entries), and
+        // there is no UI for item ownership, so it is moved rather than refused:
+        // an account seeded to the acting owner is at least visible and
+        // reassignable in the account sheet.
+        await tx
+          .update(PlaidItems)
+          .set({ ownerMemberId: member.id })
+          .where(
+            and(
+              eq(PlaidItems.householdId, householdId),
+              eq(PlaidItems.ownerMemberId, memberId),
+            ),
           );
 
-          const summary = pairs
-            .map((pair) => {
-              const other = names.get(pair.otherMemberId) ?? "another member";
-              const amount = `${fromCents(Math.abs(pair.cents))} ${pair.currency}`;
+        const { writtenOff } = await retireSeat(tx, {
+          householdId,
+          target,
+          actorMemberId: member.id,
+          voice: "other",
+          writeOffBalance,
+        });
 
-              return pair.cents > 0
-                ? `${target.displayName} still owes ${other} ${amount}`
-                : `${other} still owes ${target.displayName} ${amount}`;
-            })
-            .join("; ");
+        return { memberId, writtenOff };
+      });
+    }),
 
+  /**
+   * Hands the household to somebody else.
+   *
+   * Necessary the moment `leave` exists: `invite` hardcodes `role: 'member'` and
+   * nothing else ever writes `role`, so before this every household had exactly
+   * one owner — its creator — forever. Without a way to pass that on, an owner
+   * who wanted out was stuck, and the switcher would show them a household they
+   * could never shed.
+   *
+   * Demotes the caller in the same statement pair, so the household never
+   * momentarily has two owners or none.
+   */
+  transferOwnership: ownerProcedure
+    .input(z.object({ toMemberId: z.uuid() }))
+    .mutation(async (opts) => {
+      const { householdId, member } = opts.ctx;
+      const { toMemberId } = opts.input;
+
+      if (toMemberId === member.id) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "You already own this household",
+        });
+      }
+
+      return db.transaction(async (tx) => {
+        const [target] = await tx
+          .select({
+            id: HouseholdMembers.id,
+            displayName: HouseholdMembers.displayName,
+            userId: HouseholdMembers.userId,
+            status: HouseholdMembers.status,
+          })
+          .from(HouseholdMembers)
+          .where(
+            and(
+              eq(HouseholdMembers.id, toMemberId),
+              eq(HouseholdMembers.householdId, householdId),
+            ),
+          )
+          .limit(1);
+
+        if (!target || target.status !== "active") {
           throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: `${summary}. Write the balance off to remove them anyway.`,
+            code: "NOT_FOUND",
+            message: "That person is not an active member of this household",
           });
         }
 
-        if (pairs.length > 0) {
-          const externalRef = `adjustment:${memberId}:${randomUUID()}`;
-          const effectiveDate = today();
-
-          await tx.insert(LedgerEntries).values(
-            pairs.map((pair) => ({
-              householdId,
-              // Same direction as the balance it cancels, opposite sign — a
-              // ledger row is never updated or deleted, so zeroing a pair means
-              // appending its negation.
-              debtorMemberId: pair.cents > 0 ? memberId : pair.otherMemberId,
-              creditorMemberId: pair.cents > 0 ? pair.otherMemberId : memberId,
-              amountCents: -Math.abs(pair.cents),
-              isoCurrencyCode: pair.currency,
-              kind: "adjustment" as const,
-              externalRef,
-              memo: `Balance written off when ${target.displayName} was removed`,
-              effectiveDate,
-              createdByMemberId: member.id,
-            })),
-          );
+        // An unclaimed seat has no user behind it, so handing it the household
+        // would leave nobody able to exercise the role — every owner-gated
+        // procedure resolves its member from a session.
+        if (!target.userId) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `${target.displayName} hasn't accepted their invite yet, so they can't own the household.`,
+          });
         }
 
-        // An outstanding code for this seat would set it straight back to
-        // `active` and undo the removal.
         await tx
-          .update(HouseholdInvites)
-          .set({ revokedAt: new Date() })
+          .update(HouseholdMembers)
+          .set({ role: "owner" })
           .where(
             and(
-              eq(HouseholdInvites.householdId, householdId),
-              eq(HouseholdInvites.memberId, memberId),
-              isNull(HouseholdInvites.redeemedAt),
-              isNull(HouseholdInvites.revokedAt),
+              eq(HouseholdMembers.id, toMemberId),
+              eq(HouseholdMembers.householdId, householdId),
             ),
           );
 
         await tx
           .update(HouseholdMembers)
-          .set({ status: "removed", removedAt: new Date() })
+          .set({ role: "member" })
           .where(
             and(
-              eq(HouseholdMembers.id, memberId),
+              eq(HouseholdMembers.id, member.id),
               eq(HouseholdMembers.householdId, householdId),
             ),
           );
 
-        // Magnitudes, summed per currency: two pairs can point in opposite
-        // directions, so a signed total would report a write-off of nothing.
-        const byCurrency = new Map<string, number>();
+        return { ownerMemberId: toMemberId };
+      });
+    }),
 
-        for (const pair of pairs) {
-          byCurrency.set(
-            pair.currency,
-            (byCurrency.get(pair.currency) ?? 0) + Math.abs(pair.cents),
+  /**
+   * Leaves the household you are currently in.
+   *
+   * The exit that did not exist. Until multi-household landed, the only ways out
+   * were being removed by an owner or accepting an invite while your household
+   * was provably empty — and `acceptInvite`'s own refusal told users to "leave it
+   * before joining another one", which no procedure implemented.
+   *
+   * Retiring rather than deleting, like every other seat retirement: the ledger
+   * references this seat forever, so its history has to keep rendering with a
+   * name.
+   */
+  leave: householdProcedure
+    .input(z.object({ writeOffBalance: z.boolean().optional() }).optional())
+    .mutation(async (opts) => {
+      const { householdId, member, user } = opts.ctx;
+      const writeOffBalance = opts.input?.writeOffBalance;
+
+      return db.transaction(async (tx) => {
+        // Before the balances are read: see `retireSeat`.
+        await lockHousehold(tx, householdId);
+
+        const others = await tx
+          .select({
+            id: HouseholdMembers.id,
+            role: HouseholdMembers.role,
+          })
+          .from(HouseholdMembers)
+          .where(
+            and(
+              eq(HouseholdMembers.householdId, householdId),
+              eq(HouseholdMembers.status, "active"),
+              ne(HouseholdMembers.id, member.id),
+            ),
           );
+
+        // Leaving as the last owner of a household other people are still in
+        // would leave it unadministrable — nobody could invite, remove, rename or
+        // reassign an account ever again. Leaving as the last member *anywhere* is
+        // fine: the household simply goes quiet, and its data stays for whoever
+        // still has a balance riding on it.
+        if (
+          member.role === "owner" &&
+          others.length > 0 &&
+          !others.some((seat) => seat.role === "owner")
+        ) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "You're the only owner. Make somebody else the owner before you leave.",
+          });
         }
 
-        return {
-          memberId,
-          writtenOff:
-            pairs.length === 0
-              ? null
-              : [...byCurrency].map(([currency, cents]) => ({
-                  cents,
-                  currency,
-                })),
-        };
+        // Items seed `owner_member_id` onto accounts Plaid discovers later, so
+        // they must not stay pointed at a retired seat. A remaining owner
+        // inherits; with nobody left there is nothing to hand them to, and the
+        // household has no live member to surprise.
+        const inheritor =
+          others.find((seat) => seat.role === "owner") ?? others[0];
+
+        if (inheritor) {
+          await tx
+            .update(PlaidItems)
+            .set({ ownerMemberId: inheritor.id })
+            .where(
+              and(
+                eq(PlaidItems.householdId, householdId),
+                eq(PlaidItems.ownerMemberId, member.id),
+              ),
+            );
+        }
+
+        const { writtenOff } = await retireSeat(tx, {
+          householdId,
+          target: { id: member.id, displayName: member.displayName },
+          actorMemberId: member.id,
+          voice: "self",
+          writeOffBalance,
+        });
+
+        // Point them somewhere they can still act. Null rather than a guess:
+        // `resolveActiveMember` falls back to their oldest remaining seat, and
+        // bootstraps a fresh household only if they now hold none at all.
+        await setActiveHousehold(tx, user.id, null);
+
+        return { householdId, writtenOff };
       });
     }),
 

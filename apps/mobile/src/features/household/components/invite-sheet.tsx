@@ -7,16 +7,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
+import { inviteInputSchema } from "@budget/shared";
 import { Share2 } from "lucide-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 import { shareInvite, useInvite } from "../hooks/use-invite";
 import { apiErrorMessage } from "../lib/errors";
+
+const INVALID_EMAIL = "That doesn't look like an email address.";
 
 /** `Aug 20` — the invite's own expiry, never a hard-coded window. */
 const formatExpiry = (expiresAt: string) =>
@@ -42,6 +50,7 @@ export function InviteSheet({
   const invite = useInvite();
 
   const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
 
   const created = invite.data;
@@ -50,16 +59,34 @@ export function InviteSheet({
     if (!next) {
       invite.reset();
       setEmail("");
+      setEmailError(null);
       setDisplayName("");
     }
 
     onOpenChange(next);
   };
 
+  const handleEmailChange = (next: string) => {
+    setEmail(next);
+    // Re-validating on every keystroke would call every half-typed address
+    // wrong; the refusal is raised on submit and retracted the moment the
+    // person starts fixing it.
+    setEmailError(null);
+  };
+
   const handleInvite = async () => {
+    // The procedure's own rule, not a second copy of it: a form that disagrees
+    // with the router is a round trip spent to be told the same thing.
+    const parsed = inviteInputSchema.shape.email.safeParse(email.trim());
+
+    if (!parsed.success) {
+      setEmailError(INVALID_EMAIL);
+      return;
+    }
+
     try {
       await invite.mutateAsync({
-        email: email.trim(),
+        email: parsed.data,
         displayName: displayName.trim(),
       });
     } catch (error) {
@@ -126,7 +153,6 @@ export function InviteSheet({
                   autoComplete="name"
                   // The server's own limit. Without it the only refusal this
                   // form can produce for a long name is the email one below.
-                  maxLength={80}
                   value={displayName}
                   onChangeText={setDisplayName}
                 />
@@ -139,9 +165,11 @@ export function InviteSheet({
                   autoCorrect={false}
                   keyboardType="email-address"
                   autoComplete="email"
+                  aria-invalid={emailError !== null}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={handleEmailChange}
                 />
+                <FieldError>{emailError}</FieldError>
               </Field>
             </FieldGroup>
 
@@ -150,7 +178,7 @@ export function InviteSheet({
                 {/* Zod rejects the address with a stack of field errors, which
                     is the one refusal here not worth quoting. */}
                 {invite.error.data?.code === "BAD_REQUEST"
-                  ? "That doesn't look like an email address."
+                  ? INVALID_EMAIL
                   : apiErrorMessage(
                       invite.error,
                       "Couldn't create the invite. Please try again.",

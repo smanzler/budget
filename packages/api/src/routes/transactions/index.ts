@@ -112,7 +112,7 @@ export const transactionsRouter = router({
         members,
         member.id,
         householdId,
-        items.map((row) => row.id),
+        items,
       );
 
       return {
@@ -299,17 +299,17 @@ export const transactionsRouter = router({
         }));
       }
 
-      // The payer is always a participant, so the editor always has a row for
-      // them and a split never has to special-case "and the rest".
-      if (
-        !parts.some((part) => part.memberId === transaction.creditorMemberId)
-      ) {
-        parts = [
-          ...parts,
-          { memberId: transaction.creditorMemberId, weight: 1, amountCents: 0 },
-        ];
-      }
-
+      // The payer is deliberately NOT forced into the split.
+      //
+      // A row used to be fabricated for them at `weight: 1, amountCents: 0` so
+      // the editor always had one to render. But `weight` is what
+      // `reallocateForAmountChange` re-runs the allocator over, so that
+      // placeholder read as "an equal share" the next time Plaid moved the
+      // amount, and silently handed the excluded payer a third of the bill.
+      // There is no legal way to write "present but claiming nothing" — the
+      // `weight > 0` CHECK forbids a zero — so presence is the participation
+      // flag instead, and "I paid, you two split it" is expressed by simply
+      // leaving them out. `hydrateAttribution` re-adds them for display.
       assertSplitsBalance(transaction.amount, parts, "setSplit");
 
       await db.transaction((tx) =>
@@ -435,6 +435,45 @@ const loadEditable = async (
       creditorMemberId: Transactions.creditorMemberId,
       excludedAt: BankAccounts.excludedAt,
       currency: sql<string>`(select default_currency from households where id = ${householdId})`,
+      /**
+       * Has a debt raised by this transaction already been paid off?
+       *
+       * The enforceable half of "a settled transaction can't change". Plaid
+       * cannot be refused — the sync upsert writes a new amount before any split
+       * code runs — but a *person* re-splitting a purchase somebody has already
+       * settled can be, and that is the case worth stopping: it moves cents onto
+       * a pair that has closed, so the payer either loses money they were paid or
+       * is owed money nobody knows about.
+       *
+       * Two details this shape exists for:
+       *
+       * Pairs, not the creditor. A four-person household where the payer settled
+       * with one housemate must stay editable with respect to the other two, so
+       * the settlement has to match the debtor on the *share entry* rather than
+       * merely involve the payer.
+       *
+       * `created_at`, not `settled_on` or `date`. A new account backfills two
+       * years (DAYS_REQUESTED is 730), so a transaction dated before the last
+       * settlement routinely arrives after it — comparing effective dates would
+       * have those rows born un-editable. What actually matters is whether the
+       * debt was on the balance when somebody chose to settle it, which is when
+       * the share was posted versus when the payment was recorded.
+       */
+      settledPair: sql<boolean>`exists (
+        select 1
+        from settlements s
+        join ledger_entries e
+          on e.household_id = s.household_id
+         and e.kind = 'share'
+         and e.external_ref = 'plaid:' || ${Transactions.plaidTransactionId}
+        where s.household_id = ${householdId}
+          and s.voided_at is null
+          and s.created_at > e.created_at
+          and (
+            (s.from_member_id = e.debtor_member_id and s.to_member_id = e.creditor_member_id)
+            or (s.from_member_id = e.creditor_member_id and s.to_member_id = e.debtor_member_id)
+          )
+      )`,
     })
     .from(Transactions)
     .innerJoin(BankAccounts, eq(BankAccounts.id, Transactions.bankAccountId))
@@ -477,6 +516,17 @@ const loadEditable = async (
     });
   }
 
+  // Last, and after the cheap refusals: a settled split is a closed deal, not a
+  // permissions problem. Voiding the payment reopens it, which is why the
+  // sentence says so rather than reading as a dead end.
+  if (row.settledPair) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        "This purchase is part of a balance somebody has already paid off, so its split is fixed. Void that payment first if it needs to change.",
+    });
+  }
+
   return row;
 };
 
@@ -490,14 +540,14 @@ const hydrateAttribution = async (
   members: readonly Member[],
   youId: string,
   householdId: string,
-  transactionIds: string[],
+  transactions: readonly { id: string; creditorMemberId: string }[],
 ) => {
   const byTransaction = new Map<
     string,
     { yourShare: number | null; participants: MemberRef[] }
   >();
 
-  if (transactionIds.length === 0) return byTransaction;
+  if (transactions.length === 0) return byTransaction;
   if (members.length <= 1) return byTransaction;
 
   const byId = new Map(members.map((m) => [m.id, m]));
@@ -512,7 +562,10 @@ const hydrateAttribution = async (
     .where(
       and(
         eq(TransactionSplits.householdId, householdId),
-        inArray(TransactionSplits.transactionId, transactionIds),
+        inArray(
+          TransactionSplits.transactionId,
+          transactions.map((transaction) => transaction.id),
+        ),
       ),
     );
 
@@ -529,6 +582,27 @@ const hydrateAttribution = async (
     if (split.memberId === youId) entry.yourShare = split.amountCents;
 
     byTransaction.set(split.transactionId, entry);
+  }
+
+  // The payer is a participant of everything they paid for, whether or not
+  // they took a share of it — but a split that omits them is exactly how "I
+  // paid, you two split it" is stored, so they are not in the rows. Adding
+  // them back here is what keeps the avatar stack and the "you $0.00" subtitle
+  // on a bill somebody else ate, without a fabricated weight in the database.
+  for (const transaction of transactions) {
+    const entry = byTransaction.get(transaction.id);
+    if (!entry) continue;
+
+    const { creditorMemberId } = transaction;
+    if (entry.participants.some((seat) => seat.id === creditorMemberId)) {
+      continue;
+    }
+
+    entry.participants.push(
+      toMemberRef(byId.get(creditorMemberId), creditorMemberId, youId),
+    );
+
+    if (creditorMemberId === youId) entry.yourShare = 0;
   }
 
   // A split that is entirely yours is not attribution — the client renders

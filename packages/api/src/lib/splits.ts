@@ -177,14 +177,18 @@ export const reallocateForAmountChange = (args: {
   }
 
   const oldTotal = existing.reduce((sum, part) => sum + part.amountCents, 0);
-  const creditor = existing.find((part) => part.memberId === creditorMemberId);
+
+  // A split may legitimately omit the payer — "I paid, the two of you split it"
+  // — so there may be no row to absorb onto. Absorbing onto a notional zero and
+  // letting it join the split is what keeps that case from resetting to
+  // owner-only on the first amount change.
+  const creditor = existing.find(
+    (part) => part.memberId === creditorMemberId,
+  ) ?? { memberId: creditorMemberId, weight: 1, amountCents: 0 };
 
   // A sign flip is a different transaction in all but name — a charge that
   // became a refund. Nothing about the old hand-typed amounts still applies.
-  const reset =
-    creditor === undefined || Math.sign(newCents) !== Math.sign(oldTotal);
-
-  if (!reset) {
+  if (Math.sign(newCents) === Math.sign(oldTotal)) {
     const absorbed = creditor.amountCents + (newCents - oldTotal);
 
     // Without these two guards, a $100 exact split of $10 payer / $90 other
@@ -195,13 +199,23 @@ export const reallocateForAmountChange = (args: {
     const exceedsTotal = Math.abs(absorbed) > Math.abs(newCents);
 
     if (!flipsPayer && !exceedsTotal) {
+      const isParticipant = existing.some(
+        (part) => part.memberId === creditorMemberId,
+      );
+
       return {
         method: "exact",
-        parts: existing.map((part) =>
-          part.memberId === creditorMemberId
-            ? { ...part, amountCents: absorbed }
-            : part,
-        ),
+        parts: isParticipant
+          ? existing.map((part) =>
+              part.memberId === creditorMemberId
+                ? { ...part, amountCents: absorbed }
+                : part,
+            )
+          : // Still nothing to their name, so they stay out of the split
+            // rather than gaining a zero-cent row nobody asked for.
+            absorbed === 0
+            ? [...existing]
+            : [...existing, { ...creditor, amountCents: absorbed }],
         splitsStale: true,
       };
     }
