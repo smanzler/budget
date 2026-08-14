@@ -1,4 +1,5 @@
 import type { RouterOutputs } from "@/lib/trpc";
+import { toCents } from "@budget/shared";
 
 export type Transaction =
   RouterOutputs["transactions"]["list"]["items"][number];
@@ -54,12 +55,11 @@ const formatters = new Map<string, Intl.DateTimeFormat>();
 
 const dateFormatter = (options: Intl.DateTimeFormatOptions) => {
   const key = JSON.stringify(options);
-  let formatter = formatters.get(key);
+  const cached = formatters.get(key);
+  if (cached) return cached;
 
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat("en-US", options);
-    formatters.set(key, formatter);
-  }
+  const formatter = new Intl.DateTimeFormat("en-US", options);
+  formatters.set(key, formatter);
 
   return formatter;
 };
@@ -67,9 +67,9 @@ const dateFormatter = (options: Intl.DateTimeFormatOptions) => {
 /**
  * Today / Yesterday / weekday / `Mon D`.
  *
- * Deliberately not `lib/utils.ts:formatDate`, which floors elapsed milliseconds
- * — across a DST boundary a "day" is 23 or 25 hours and flooring lands on the
- * wrong label. Rounding the delta between two local midnights doesn't care.
+ * Rounds the delta between two local midnights. Do not floor elapsed
+ * milliseconds: across a DST boundary a day is 23 or 25 hours, and a floor
+ * lands on the wrong label.
  *
  * Weekday names rather than "N days ago" because a sticky header would
  * otherwise re-label itself as the list ages.
@@ -129,12 +129,16 @@ export const groupByDay = (
     section.data.push(transaction);
     section.currency ??= transaction.isoCurrencyCode;
 
-    const value = Number(transaction.amount);
-    if (Number.isFinite(value)) {
+    // `toCents` rather than `Number(amount) * 100`, which is 1006.9999… for
+    // "10.07". It throws on anything that is not a `numeric(12,2)`, and one bad
+    // row must not poison the day total.
+    try {
       cents.set(
         transaction.date,
-        (cents.get(transaction.date) ?? 0) + Math.round(value * 100),
+        (cents.get(transaction.date) ?? 0) + toCents(transaction.amount),
       );
+    } catch {
+      // not a numeric(12,2) — leave the day's running total alone
     }
   }
 

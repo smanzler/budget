@@ -1,3 +1,4 @@
+import { ApiError } from "@/components/api-error";
 import {
   Section,
   SectionContent,
@@ -16,7 +17,6 @@ import {
   useHouseholdList,
   useSetActiveHousehold,
 } from "../hooks/use-household";
-import { apiErrorMessage } from "../lib/errors";
 
 /**
  * Picks which household the app is looking at.
@@ -51,7 +51,7 @@ export function HouseholdSwitcher({ className }: { className?: string }) {
         {households.map((household) => (
           <SectionItem
             key={household.householdId}
-            className="h-auto py-2.5"
+            size="tall"
             onPress={
               household.isActive || setActive.isPending
                 ? undefined
@@ -72,8 +72,8 @@ export function HouseholdSwitcher({ className }: { className?: string }) {
             </View>
 
             {household.isActive ? (
-              <Badge variant="secondary" className="px-1.5 py-0">
-                <Text className="text-[10px]">Current</Text>
+              <Badge variant="secondary" size="sm">
+                <Text>Current</Text>
               </Badge>
             ) : setActive.isPending &&
               setActive.variables?.householdId === household.householdId ? (
@@ -85,11 +85,7 @@ export function HouseholdSwitcher({ className }: { className?: string }) {
         ))}
       </SectionContent>
 
-      {setActive.isError ? (
-        <Text className="text-destructive text-sm">
-          {apiErrorMessage(setActive.error, "Couldn't switch household.")}
-        </Text>
-      ) : null}
+      <ApiError error={setActive.error} fallback="Couldn't switch household." />
     </Section>
   );
 }

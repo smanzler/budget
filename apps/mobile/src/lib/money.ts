@@ -43,11 +43,15 @@ export const formatSignedCents = (
  * `cents` is signed from **your** side, the way `balances.summary` and
  * `balances.activity` both state it: positive means they owe you.
  */
-export const formatOwes = (
-  name: string,
-  cents: number,
-  currency?: string | null,
-): string => {
+export const formatOwes = ({
+  name,
+  cents,
+  currency,
+}: {
+  name: string;
+  cents: number;
+  currency?: string | null;
+}): string => {
   if (cents === 0) return "You're settled up";
 
   return cents > 0

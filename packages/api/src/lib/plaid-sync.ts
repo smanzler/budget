@@ -6,6 +6,7 @@ import {
   BankAccounts,
   PlaidItems,
   SplitIntents,
+  type SplitIntentPart,
   TransactionSplits,
   Transactions,
 } from "../db/schema";
@@ -35,13 +36,10 @@ const WRITE_CHUNK = 500;
 /** Reads bind one parameter per id, so they can be far larger than writes. */
 const READ_CHUNK = 5_000;
 
-const chunk = <T>(items: T[], size: number): T[][] => {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    out.push(items.slice(i, i + size));
-  }
-  return out;
-};
+const chunk = <T>(items: T[], size: number): T[][] =>
+  Array.from({ length: Math.ceil(items.length / size) }, (_, iChunk) =>
+    items.slice(iChunk * size, iChunk * size + size),
+  );
 
 /**
  * One row per `plaidTransactionId`, the last occurrence winning.
@@ -61,9 +59,7 @@ const toNumeric = (value: number | null | undefined) =>
   typeof value === "number" && Number.isFinite(value) ? String(value) : null;
 
 const loadItem = async (itemId: string) => {
-  const item = await db.query.PlaidItems.findFirst({
-    where: { id: itemId },
-  });
+  const item = await db.query.PlaidItems.findFirst({ where: { id: itemId } });
 
   if (!item) throw new Error(`Plaid item not found: ${itemId}`);
 
@@ -136,7 +132,7 @@ export const syncItemAccounts = async (itemId: string) => {
       // Composite, not the old global unique on `plaid_account_id`: Plaid
       // account ids are unique per Item, not per bank, and a collision under
       // the global unique left the account parented to the wrong item — after
-      // which `accountIdMap` never found it and every transaction for that
+      // which `listAccountIds` never found it and every transaction for that
       // account was silently dropped, forever.
       target: [BankAccounts.plaidItemId, BankAccounts.plaidAccountId],
       set: {
@@ -211,13 +207,13 @@ export const syncItemTransactions = async (itemId: string) => {
   }
 
   const upserts = [...added, ...modified];
-  let accountIds = await accountIdMap(item.id);
+  let accountIds = await listAccountIds(item.id);
 
   // A new account can appear at the institution between syncs; its transactions
   // arrive before we've ever seen the account, so refresh once and retry.
   if (upserts.some((t) => !accountIds.has(t.account_id))) {
     await syncItemAccounts(item.id);
-    accountIds = await accountIdMap(item.id);
+    accountIds = await listAccountIds(item.id);
   }
 
   // One row per Plaid id, last occurrence winning.
@@ -388,11 +384,7 @@ export const syncItemTransactions = async (itemId: string) => {
 
     await tx
       .update(PlaidItems)
-      .set({
-        cursor,
-        lastSyncedAt: new Date(),
-        status: "active",
-      })
+      .set({ cursor, lastSyncedAt: new Date(), status: "active" })
       .where(eq(PlaidItems.id, item.id));
   });
 
@@ -445,6 +437,12 @@ const loadPreImages = async (tx: Tx, plaidTransactionIds: string[]) => {
     rows.map((row) => [row.plaidTransactionId, row]),
   );
 };
+
+/** A freshly inserted post whose pending row may carry a split intent forward. */
+const hasCarriedIntent = (
+  post: PostImage,
+): post is PostImage & { plaidPendingTransactionId: string } =>
+  post.inserted && post.plaidPendingTransactionId !== null;
 
 type PostImage = {
   id: string;
@@ -503,7 +501,7 @@ const resolveSplitChanges = async (
   if (changed.length === 0) return [];
 
   const [accounts, members, existingSplits, intents] = await Promise.all([
-    accountDefaults(
+    listAccountDefaults(
       tx,
       changed.map((post) => post.bankAccountId),
     ),
@@ -514,11 +512,9 @@ const resolveSplitChanges = async (
     ),
     loadIntents(
       tx,
-      changed.flatMap((post) =>
-        post.inserted && post.plaidPendingTransactionId
-          ? [post.plaidPendingTransactionId]
-          : [],
-      ),
+      changed
+        .filter(hasCarriedIntent)
+        .map((post) => post.plaidPendingTransactionId),
     ),
   ]);
 
@@ -532,59 +528,56 @@ const resolveSplitChanges = async (
     const totalCents = toCents(post.amount);
     const existing = existingSplits.get(post.id) ?? [];
 
-    let resolved: {
-      method: SplitMethod;
-      parts: SplitPart[];
-      splitsStale: boolean;
-    };
+    // A pending charge is retired under a new id; carry its intent across so a
+    // hand-typed split does not silently die two days later.
+    const carried = post.plaidPendingTransactionId
+      ? intents.get(post.plaidPendingTransactionId)
+      : undefined;
 
-    if (existing.length > 0) {
-      resolved = reallocateForAmountChange({
-        method: post.splitMethod,
-        creditorMemberId: post.creditorMemberId,
-        existing,
-        newCents: totalCents,
-      });
-    } else {
-      // A pending charge is retired under a new id; carry its intent across so
-      // a hand-typed split does not silently die two days later.
-      const carried = post.plaidPendingTransactionId
-        ? intents.get(post.plaidPendingTransactionId)
-        : undefined;
-
-      resolved = carried
-        ? // Through the same function the amount-change path uses, rather than
-          // a second implementation of it: the pending and posted amounts
-          // routinely differ (a tip), and re-running the allocator over an
-          // `exact` intent's weights — which `setSplit` writes as all 1s —
-          // would turn a hand-typed split into an equal one.
-          reallocateForAmountChange({
-            method: carried.method,
+    const resolved =
+      existing.length > 0
+        ? reallocateForAmountChange({
+            method: post.splitMethod,
             creditorMemberId: post.creditorMemberId,
-            existing: carried.parts.map((part) => ({
-              memberId: part.memberId,
-              weight: part.weight,
-              // Absent on rows archived before the cents were carried; zero
-              // reads as "no exact intent recorded", which sends `exact` down
-              // the reset path rather than inventing amounts for it.
-              amountCents: part.amountCents ?? 0,
-            })),
+            existing,
             newCents: totalCents,
           })
-        : {
-            ...resolveDefaultSplit({
+        : carried
+          ? // Through the same function the amount-change path uses, rather than
+            // a second implementation of it: the pending and posted amounts
+            // routinely differ (a tip), and re-running the allocator over an
+            // `exact` intent's weights — which `setSplit` writes as all 1s —
+            // would turn a hand-typed split into an equal one.
+            reallocateForAmountChange({
+              method: carried.method,
               creditorMemberId: post.creditorMemberId,
-              totalCents,
-              transaction: post,
-              account,
-              householdCurrency: defaultCurrency,
-              memberIds,
-            }),
-            splitsStale: false,
-          };
-    }
+              existing: carried.parts.map((part) => ({
+                memberId: part.memberId,
+                weight: part.weight,
+                // Absent on rows archived before the cents were carried; zero
+                // reads as "no exact intent recorded", which sends `exact` down
+                // the reset path rather than inventing amounts for it.
+                amountCents: part.amountCents ?? 0,
+              })),
+              newCents: totalCents,
+            })
+          : {
+              ...resolveDefaultSplit({
+                creditorMemberId: post.creditorMemberId,
+                totalCents,
+                transaction: post,
+                account,
+                householdCurrency: defaultCurrency,
+                memberIds,
+              }),
+              splitsStale: false,
+            };
 
-    assertSplitsBalance(post.amount, resolved.parts, post.plaidTransactionId);
+    assertSplitsBalance({
+      amount: post.amount,
+      context: post.plaidTransactionId,
+      parts: resolved.parts,
+    });
 
     await writeSplits(tx, {
       householdId: post.householdId,
@@ -685,20 +678,20 @@ const reverseRemoved = async (
         });
     }
 
-    for (const row of rows) {
-      targets.push(
-        // The row is about to be deleted, hence the null id; the entry keeps
-        // its memo and date so it still reads correctly once detached. Empty
-        // pairs reverse every posted pair to exactly zero.
+    // The rows are about to be deleted, hence the null id; each entry keeps its
+    // memo and date so it still reads correctly once detached. Empty pairs
+    // reverse every posted pair to exactly zero.
+    targets.push(
+      ...rows.map((row) =>
         shareTargetFor({ ...row, id: null }, defaultCurrency, []),
-      );
-    }
+      ),
+    );
   }
 
   return targets;
 };
 
-const accountDefaults = async (tx: Tx, bankAccountIds: string[]) => {
+const listAccountDefaults = async (tx: Tx, bankAccountIds: string[]) => {
   const rows = await loadChunked(bankAccountIds, (batch) =>
     tx
       .select({
@@ -755,7 +748,7 @@ const loadIntents = async (tx: Tx, plaidTransactionIds: string[]) => {
     string,
     {
       method: SplitMethod;
-      parts: { memberId: string; weight: number; amountCents?: number }[];
+      parts: SplitIntentPart[];
     }
   >(
     rows.map((row) => [
@@ -773,7 +766,7 @@ const loadIntents = async (tx: Tx, plaidTransactionIds: string[]) => {
  * `household.setAccountOwner` survives a sync, and reading the item's owner here
  * would make that reassignment a no-op for every transaction that follows it.
  */
-const accountIdMap = async (plaidItemId: string) => {
+const listAccountIds = async (plaidItemId: string) => {
   const accounts = await db
     .select({
       id: BankAccounts.id,

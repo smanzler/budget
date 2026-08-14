@@ -37,7 +37,7 @@ export function MemberRow({
       isFirst={isFirst}
       isLast={isLast}
       onPress={onPress}
-      className="h-auto py-2"
+      size="snug"
     >
       <MemberAvatar displayName={member.displayName} />
 
@@ -53,14 +53,14 @@ export function MemberRow({
         {/* A seat that exists so you can split with them today, held by nobody
             yet. */}
         {member.status === "invited" ? (
-          <Badge variant="secondary" className="px-1.5 py-0">
-            <Text className="text-[10px]">Invited</Text>
+          <Badge variant="secondary" size="sm">
+            <Text>Invited</Text>
           </Badge>
         ) : null}
 
         {member.role === "owner" ? (
-          <Badge variant="secondary" className="px-1.5 py-0">
-            <Text className="text-[10px]">Owner</Text>
+          <Badge variant="secondary" size="sm">
+            <Text>Owner</Text>
           </Badge>
         ) : null}
       </View>

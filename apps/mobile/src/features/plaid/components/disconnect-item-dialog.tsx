@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
-import { apiErrorMessage } from "@/features/household/lib/errors";
+import { formatApiError } from "@/lib/errors";
 import { formatCents } from "@/lib/money";
 import { useState } from "react";
 import { View } from "react-native";
@@ -46,7 +46,7 @@ export function DisconnectItemDialog({
   const purge = usePurgePlaidItem();
   const impact = useItemImpact(open ? itemId : null);
 
-  /** The destructive path is a second, deliberate step — never the first tap. */
+  // The destructive path is a second, deliberate step — never the first tap.
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,7 +76,7 @@ export function DisconnectItemDialog({
     } catch (caught) {
       console.error(caught);
       setError(
-        apiErrorMessage(
+        formatApiError(
           caught,
           action === "disconnect"
             ? "Couldn't disconnect. Please try again."

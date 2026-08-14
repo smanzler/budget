@@ -1,18 +1,15 @@
-import { Button } from "@/components/ui/button";
+import { ApiError } from "@/components/api-error";
 import {
   Dialog,
+  DialogActions,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupOption } from "@/components/ui/radio-group";
-import { Spinner } from "@/components/ui/spinner";
-import { Text } from "@/components/ui/text";
 import { useState } from "react";
 import { useHousehold, useSetCurrency } from "../hooks/use-household";
-import { apiErrorMessage } from "../lib/errors";
 
 /**
  * The currencies on offer. Deliberately a short list rather than all 180 ISO
@@ -30,7 +27,7 @@ export const CURRENCIES = [
   { code: "AUD", label: "Australian dollar", symbol: "$" },
 ] as const;
 
-export const currencyLabel = (code: string) =>
+export const formatCurrencyLabel = (code: string) =>
   CURRENCIES.find((currency) => currency.code === code)?.label ?? code;
 
 /**
@@ -85,33 +82,18 @@ export function CurrencySheet({
           ))}
         </RadioGroup>
 
-        {setCurrency.error ? (
-          <Text className="text-destructive text-sm">
-            {apiErrorMessage(
-              setCurrency.error,
-              "Couldn't change the currency. Try again.",
-            )}
-          </Text>
-        ) : null}
+        <ApiError
+          error={setCurrency.error}
+          fallback="Couldn't change the currency. Try again."
+        />
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            disabled={setCurrency.isPending}
-            onPress={() => onOpenChange(false)}
-          >
-            <Text>Cancel</Text>
-          </Button>
-          <Button
-            disabled={setCurrency.isPending || selected === current}
-            onPress={() => void handleSave()}
-          >
-            {setCurrency.isPending ? (
-              <Spinner className="text-primary-foreground" />
-            ) : null}
-            <Text>Save</Text>
-          </Button>
-        </DialogFooter>
+        <DialogActions
+          confirmLabel="Save"
+          disabled={selected === current}
+          isPending={setCurrency.isPending}
+          onCancel={() => onOpenChange(false)}
+          onConfirm={() => void handleSave()}
+        />
       </DialogContent>
     </Dialog>
   );

@@ -16,10 +16,7 @@ const renderNotification = (
 ): { title: string; body: string } => {
   switch (payload.type) {
     case "system_message":
-      return {
-        title: "Budget",
-        body: payload.data.message,
-      };
+      return { title: "Budget", body: payload.data.message };
     case "bank_login_required":
       return {
         title: payload.data.institutionName ?? "Bank connection expired",
@@ -28,7 +25,7 @@ const renderNotification = (
     case "settlement_recorded":
       return {
         title: "Payment recorded",
-        body: `${payload.data.fromDisplayName} says they paid you ${money(
+        body: `${payload.data.fromDisplayName} says they paid you ${formatMoney(
           payload.data.amountCents,
           payload.data.isoCurrencyCode,
         )}.`,
@@ -36,7 +33,7 @@ const renderNotification = (
     case "settlement_voided":
       return {
         title: "Payment voided",
-        body: `${payload.data.voidedByDisplayName} took back a ${money(
+        body: `${payload.data.voidedByDisplayName} took back a ${formatMoney(
           payload.data.amountCents,
           payload.data.isoCurrencyCode,
         )} payment.`,
@@ -51,7 +48,7 @@ const renderNotification = (
  * at write time, so it has to be unambiguous years later and in whatever
  * currency the household chose, and a bare `$` is neither.
  */
-const money = (cents: number, currency: string) =>
+const formatMoney = (cents: number, currency: string) =>
   `${currency} ${fromCents(Math.abs(cents))}`;
 
 /**

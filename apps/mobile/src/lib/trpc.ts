@@ -2,27 +2,23 @@ import { createTRPCContext } from "@trpc/tanstack-react-query";
 import { type AppRouter } from "@budget/api";
 import { type inferRouterOutputs } from "@trpc/server";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
-import { authClient } from "./auth-client";
+import { authClient } from "@/lib/auth-client";
 import { env } from "@/env";
 
 export const { TRPCProvider, useTRPC, useTRPCClient } =
   createTRPCContext<AppRouter>();
 
-export function createLinks() {
-  return [
-    httpBatchLink({
-      url: env.EXPO_PUBLIC_API_URL + "/trpc",
-      headers() {
-        const cookies = authClient.getCookie();
-        return cookies ? { Cookie: cookies } : {};
-      },
-    }),
-  ];
-}
+const createLinks = () => [
+  httpBatchLink({
+    url: env.EXPO_PUBLIC_API_URL + "/trpc",
+    headers() {
+      const cookies = authClient.getCookie();
+      return cookies ? { Cookie: cookies } : {};
+    },
+  }),
+];
 
-export const vanillaTrpc = createTRPCClient<AppRouter>({
-  links: createLinks(),
-});
+export const trpcClient = createTRPCClient<AppRouter>({ links: createLinks() });
 
 /**
  * The API's return types, for typing props without re-declaring shapes.

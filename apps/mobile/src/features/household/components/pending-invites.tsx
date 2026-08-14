@@ -1,3 +1,4 @@
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
@@ -11,7 +12,7 @@ import {
   usePendingInvites,
   type PendingInvite,
 } from "../hooks/use-invite";
-import { joinErrorMessage } from "../lib/errors";
+import { formatJoinError } from "../lib/errors";
 
 /**
  * "Sam invited you to Flat 3" — with a button, on the first screen of the app.
@@ -54,12 +55,12 @@ function InviteBanner({ invite }: { invite: PendingInvite }) {
       router.push("/balances");
     } catch (caught) {
       console.error(caught);
-      setError(joinErrorMessage(caught));
+      setError(formatJoinError(caught));
     }
   };
 
   return (
-    <View className="bg-card border-border gap-2 rounded-xl border p-3 shadow-sm shadow-black/5">
+    <Card className="gap-2 p-3">
       <View className="flex-row items-center gap-2">
         <Icon as={MailOpen} className="text-foreground size-4" />
         <Text className="min-w-0 flex-1 font-medium" numberOfLines={2}>
@@ -86,6 +87,6 @@ function InviteBanner({ invite }: { invite: PendingInvite }) {
           <Text>Join</Text>
         </Button>
       </View>
-    </View>
+    </Card>
   );
 }

@@ -1,8 +1,8 @@
+import { buildLoadMore } from "@/lib/query";
 import { useTRPC, type RouterOutputs } from "@/lib/trpc";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useHousehold } from "./use-household";
 
-export type BalancePair = RouterOutputs["balances"]["summary"]["pairs"][number];
 export type ActivityEntry =
   RouterOutputs["balances"]["activity"]["items"][number];
 
@@ -64,11 +64,7 @@ export const usePairActivity = (memberId: string) => {
 
   const entries = query.data?.pages.flatMap((page) => page.items) ?? [];
 
-  const loadMore = () => {
-    if (query.hasNextPage && !query.isFetchingNextPage) {
-      void query.fetchNextPage();
-    }
-  };
+  const loadMore = buildLoadMore(query);
 
   return { query, entries, loadMore };
 };

@@ -18,7 +18,6 @@ import type { NotificationPayload } from "@budget/shared";
  * the shape `postShareDeltas` already uses — net the payment against its own
  * reversal and see a settlement that was never posted at all.
  */
-const voidRef = (settlementId: string) => `${settlementRef(settlementId)}:void`;
 
 /** Both parties come out of the same table, so the list needs two of it. */
 const Payer = alias(HouseholdMembers, "payer");
@@ -67,7 +66,8 @@ export const settlementsRouter = router({
     )
     .mutation(async (opts) => {
       const { householdId, member } = opts.ctx;
-      const { settlementId, toMemberId, amountCents, settledOn } = opts.input;
+      const { amountCents, method, note, settledOn, settlementId, toMemberId } =
+        opts.input;
 
       // You can only record a payment *you* made. Recording one on someone
       // else's behalf would let a member wipe out their own debt by asserting
@@ -126,8 +126,8 @@ export const settlementsRouter = router({
             amountCents,
             isoCurrencyCode: household.defaultCurrency,
             settledOn,
-            method: opts.input.method ?? null,
-            note: opts.input.note ?? null,
+            method: method ?? null,
+            note: note ?? null,
             createdByMemberId: member.id,
           })
           // The primary key is the idempotency key. A replay of the same id —
@@ -178,7 +178,7 @@ export const settlementsRouter = router({
           kind: "settlement",
           externalRef: settlementRef(settlementId),
           settlementId,
-          memo: opts.input.note ?? null,
+          memo: note ?? null,
           effectiveDate: settledOn,
           createdByMemberId: member.id,
         });
@@ -400,7 +400,7 @@ export const settlementsRouter = router({
           amountCents: -original.amountCents,
           isoCurrencyCode: original.isoCurrencyCode,
           kind: "settlement",
-          externalRef: voidRef(settlementId),
+          externalRef: `${settlementRef(settlementId)}:void`,
           settlementId,
           reversesEntryId: original.id,
           memo: "Voided",

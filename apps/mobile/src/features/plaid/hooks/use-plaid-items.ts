@@ -13,7 +13,7 @@ const SYNCING_POLL_MS = 3_000;
 export const usePlaidItems = () => {
   const trpc = useTRPC();
 
-  const query = useQuery(
+  return useQuery(
     trpc.plaid.items.list.queryOptions(undefined, {
       refetchInterval: ({ state }) =>
         state.data?.some((item) => item.status === "syncing")
@@ -21,8 +21,4 @@ export const usePlaidItems = () => {
           : false,
     }),
   );
-
-  const items = query.data ?? [];
-
-  return { ...query, items, hasItems: items.length > 0 };
 };

@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogActions,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -15,14 +16,13 @@ import {
 } from "@/components/ui/field";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { inviteInputSchema } from "@budget/shared";
 import { Share2 } from "lucide-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 import { shareInvite, useInvite } from "../hooks/use-invite";
-import { apiErrorMessage } from "../lib/errors";
+import { formatApiError } from "@/lib/errors";
 
 const INVALID_EMAIL = "That doesn't look like an email address.";
 
@@ -125,9 +125,10 @@ export function InviteSheet({
               </Button>
               <Button
                 onPress={() =>
-                  void shareInvite(created.code, email.trim()).catch(
-                    console.error,
-                  )
+                  void shareInvite({
+                    code: created.code,
+                    email: email.trim(),
+                  }).catch(console.error)
                 }
               >
                 <Icon as={Share2} className="text-primary-foreground size-4" />
@@ -179,35 +180,20 @@ export function InviteSheet({
                     is the one refusal here not worth quoting. */}
                 {invite.error.data?.code === "BAD_REQUEST"
                   ? INVALID_EMAIL
-                  : apiErrorMessage(
+                  : formatApiError(
                       invite.error,
                       "Couldn't create the invite. Please try again.",
                     )}
               </Text>
             ) : null}
 
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={invite.isPending}
-                onPress={() => handleOpenChange(false)}
-              >
-                <Text>Cancel</Text>
-              </Button>
-              <Button
-                disabled={
-                  invite.isPending ||
-                  email.trim() === "" ||
-                  displayName.trim() === ""
-                }
-                onPress={() => void handleInvite()}
-              >
-                {invite.isPending ? (
-                  <Spinner className="text-primary-foreground" />
-                ) : null}
-                <Text>Create invite</Text>
-              </Button>
-            </DialogFooter>
+            <DialogActions
+              confirmLabel="Create invite"
+              disabled={email.trim() === "" || displayName.trim() === ""}
+              isPending={invite.isPending}
+              onCancel={() => handleOpenChange(false)}
+              onConfirm={() => void handleInvite()}
+            />
           </>
         )}
       </DialogContent>

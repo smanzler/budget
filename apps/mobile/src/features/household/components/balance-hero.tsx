@@ -1,3 +1,4 @@
+import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { cn } from "@/lib/utils";
 import { View } from "react-native";
@@ -63,7 +64,7 @@ export function BalanceHero({
     .join(" · ");
 
   return (
-    <View className="bg-card border-border gap-3 rounded-xl border p-4 shadow-sm shadow-black/5">
+    <Card className="gap-3 p-4">
       <View className="flex-row gap-4">
         <Figure
           label="You are owed"
@@ -79,6 +80,6 @@ export function BalanceHero({
           includes {pendingText} pending
         </Text>
       ) : null}
-    </View>
+    </Card>
   );
 }

@@ -9,10 +9,10 @@ export function TransactionDayHeader({
   section: TransactionSection;
 }) {
   // The day's net, run through the same sign interpretation as a row.
-  const { text, isInflow } = formatTransactionAmount(
-    String(section.total),
-    section.currency,
-  );
+  const { text, isInflow } = formatTransactionAmount({
+    amount: String(section.total),
+    currency: section.currency,
+  });
 
   return (
     <View className="flex-row items-baseline justify-between px-1">

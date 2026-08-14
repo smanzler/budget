@@ -6,9 +6,8 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { expo } from "@better-auth/expo";
 import { emailOTP } from "better-auth/plugins";
 import * as schema from "../db/auth-schema";
-import { env } from "../env";
 import { ensureHousehold } from "./household";
-import { mailer } from "./mailer";
+import { sendEmail } from "./mailer";
 import { renderOtpEmail } from "./otp-email";
 
 export const auth = betterAuth({
@@ -30,13 +29,7 @@ export const auth = betterAuth({
           expiresInMinutes: 5,
         });
 
-        await mailer.sendMail({
-          from: env.SMTP_FROM,
-          to: email,
-          subject,
-          html,
-          text,
-        });
+        await sendEmail({ to: email, subject, html, text });
       },
     }),
   ],
@@ -62,11 +55,7 @@ export const auth = betterAuth({
     },
   },
   trustedOrigins: ["com.sigh10.budget://"],
-  advanced: {
-    database: {
-      generateId: "uuid",
-    },
-  },
+  advanced: { database: { generateId: "uuid" } },
 });
 
 declare module "fastify" {

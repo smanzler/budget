@@ -17,7 +17,7 @@ import { KeyRound } from "lucide-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 import { useAcceptInvite, usePendingInvites } from "../hooks/use-invite";
-import { joinErrorMessage } from "../lib/errors";
+import { formatJoinError } from "../lib/errors";
 
 /** Matches `CODE_LENGTH` and `CODE_ALPHABET` on the server. */
 const CODE_LENGTH = 10;
@@ -29,7 +29,7 @@ const CODE_LENGTH = 10;
  * emailed and listed in-app, but a code read off somebody else's screen — or out
  * of a mail client that cannot open an app link — has nowhere else to go.
  */
-export function JoinWithCode() {
+export function JoinCode() {
   const router = useRouter();
   const { data: session } = authClient.useSession();
   const accept = useAcceptInvite();
@@ -51,7 +51,7 @@ export function JoinWithCode() {
       router.replace("/balances");
     } catch (caught) {
       console.error(caught);
-      setError(joinErrorMessage(caught));
+      setError(formatJoinError(caught));
     }
   };
 

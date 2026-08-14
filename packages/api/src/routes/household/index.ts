@@ -15,11 +15,15 @@ import {
   Transactions,
   users,
 } from "../../db/schema";
-import { env } from "../../env";
 import { renderInviteEmail } from "../../lib/invite-email";
-import { resolveActiveMember, setActiveHousehold } from "../../lib/household";
-import { lockHousehold } from "../../lib/ledger";
-import { mailer } from "../../lib/mailer";
+import {
+  hasPostedEntries,
+  resolveActiveMember,
+  setActiveHousehold,
+  toNormalizedEmail,
+} from "../../lib/household";
+import { lockHousehold, type Tx } from "../../lib/ledger";
+import { sendEmail } from "../../lib/mailer";
 import { toIso } from "../../lib/serialize";
 import {
   householdProcedure,
@@ -31,8 +35,10 @@ import {
 /** `YYYY-MM-DD` — the shape every `date` column in this schema round-trips. */
 const today = () => new Date().toISOString().slice(0, 10);
 
+const isOwner = (seat: { role: string }) => seat.role === "owner";
+
 /** `Amex`, `Amex and Chase`, `Amex, Chase and Ally` — for a refusal sentence. */
-const listNames = (names: string[]) =>
+const formatNames = (names: string[]) =>
   names.length <= 1
     ? (names[0] ?? "an account")
     : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
@@ -89,7 +95,7 @@ const inviteCode = () => {
  *    the two halves would be zeroed without ever having been counted.
  */
 const retireSeat = async (
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tx: Tx,
   args: {
     householdId: string;
     /** The seat being retired. */
@@ -116,7 +122,7 @@ const retireSeat = async (
     .orderBy(BankAccounts.name);
 
   if (owned.length > 0) {
-    const names = listNames(owned.map((account) => account.name));
+    const names = formatNames(owned.map((account) => account.name));
     const it = owned.length === 1 ? "it" : "them";
 
     throw new TRPCError({
@@ -241,20 +247,18 @@ const retireSeat = async (
 
   // Magnitudes, summed per currency: two pairs can point in opposite directions,
   // so a signed total would report a write-off of nothing.
-  const byCurrency = new Map<string, number>();
-
-  for (const pair of pairs) {
-    byCurrency.set(
-      pair.currency,
-      (byCurrency.get(pair.currency) ?? 0) + Math.abs(pair.cents),
-    );
-  }
+  const currencies = [...new Set(pairs.map((pair) => pair.currency))];
 
   return {
     writtenOff:
       pairs.length === 0
         ? null
-        : [...byCurrency].map(([currency, cents]) => ({ cents, currency })),
+        : currencies.map((currency) => ({
+            cents: pairs
+              .filter((pair) => pair.currency === currency)
+              .reduce((total, pair) => total + Math.abs(pair.cents), 0),
+            currency,
+          })),
   };
 };
 
@@ -325,7 +329,7 @@ export const householdRouter = router({
         });
       }
 
-      await setActiveHousehold(db, user.id, householdId);
+      await setActiveHousehold({ householdId, tx: db, userId: user.id });
 
       return { householdId, memberId: seat.id };
     }),
@@ -346,10 +350,7 @@ export const householdRouter = router({
       // Rides `ledger_entries_household_ref_idx`, and it is what lets the client
       // render the currency as fixed instead of discovering it through a
       // refusal after the picker has already been opened.
-      db.query.LedgerEntries.findFirst({
-        where: { householdId },
-        columns: { id: true },
-      }),
+      hasPostedEntries(householdId),
     ]);
 
     if (!household) {
@@ -364,7 +365,7 @@ export const householdRouter = router({
       name: household.name,
       defaultCurrency: household.defaultCurrency,
       /** Once anything has been posted, `setCurrency` refuses — see there. */
-      currencyLocked: posted !== undefined,
+      currencyLocked: posted,
       myMemberId: member.id,
       // Removed seats are included: the ledger and the activity feed still
       // reference them, so the client needs a name for every id it can meet.
@@ -381,10 +382,13 @@ export const householdRouter = router({
   rename: ownerProcedure
     .input(z.object({ name: z.string().trim().min(1).max(80) }))
     .mutation(async (opts) => {
+      const { householdId } = opts.ctx;
+      const { name } = opts.input;
+
       const [household] = await db
         .update(Households)
-        .set({ name: opts.input.name })
-        .where(eq(Households.id, opts.ctx.householdId))
+        .set({ name })
+        .where(eq(Households.id, householdId))
         .returning({ id: Households.id, name: Households.name });
 
       if (!household) {
@@ -433,12 +437,7 @@ export const householdRouter = router({
       const { householdId } = opts.ctx;
       const { currency } = opts.input;
 
-      const posted = await db.query.LedgerEntries.findFirst({
-        where: { householdId },
-        columns: { id: true },
-      });
-
-      if (posted) {
+      if (await hasPostedEntries(householdId)) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message:
@@ -469,7 +468,7 @@ export const householdRouter = router({
     const { householdId, member } = opts.ctx;
     const { displayName } = opts.input;
 
-    const email = opts.input.email.trim().toLowerCase();
+    const email = toNormalizedEmail(opts.input.email);
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
 
     const invited = await db.transaction(async (tx) => {
@@ -623,13 +622,7 @@ export const householdRouter = router({
         expiresInDays: Math.round(INVITE_TTL_MS / (24 * 60 * 60 * 1000)),
       });
 
-      await mailer.sendMail({
-        from: env.SMTP_FROM,
-        to: email,
-        subject,
-        html,
-        text,
-      });
+      await sendEmail({ to: email, subject, html, text });
     } catch (caught) {
       console.error("failed to email an invite", caught);
     }
@@ -674,13 +667,16 @@ export const householdRouter = router({
     revoke: ownerProcedure
       .input(z.object({ inviteId: z.uuid() }))
       .mutation(async (opts) => {
+        const { householdId } = opts.ctx;
+        const { inviteId } = opts.input;
+
         const [revoked] = await db
           .update(HouseholdInvites)
           .set({ revokedAt: new Date() })
           .where(
             and(
-              eq(HouseholdInvites.id, opts.input.inviteId),
-              eq(HouseholdInvites.householdId, opts.ctx.householdId),
+              eq(HouseholdInvites.id, inviteId),
+              eq(HouseholdInvites.householdId, householdId),
               isNull(HouseholdInvites.redeemedAt),
               isNull(HouseholdInvites.revokedAt),
             ),
@@ -739,7 +735,7 @@ export const householdRouter = router({
         .innerJoin(Seat, eq(Seat.id, HouseholdInvites.memberId))
         .where(
           and(
-            sql`lower(${HouseholdInvites.email}) = ${user.email.trim().toLowerCase()}`,
+            sql`lower(${HouseholdInvites.email}) = ${toNormalizedEmail(user.email)}`,
             isNull(HouseholdInvites.redeemedAt),
             isNull(HouseholdInvites.revokedAt),
             // Unlike `list`, which keeps expired rows so an owner can re-send:
@@ -815,7 +811,7 @@ export const householdRouter = router({
       // own addressee forever.
       if (
         !invite ||
-        invite.email.trim().toLowerCase() !== user.email.trim().toLowerCase()
+        toNormalizedEmail(invite.email) !== toNormalizedEmail(user.email)
       ) {
         // One error for both cases. Whoever is holding a forwarded code learns
         // nothing from being told the code was real.
@@ -930,7 +926,11 @@ export const householdRouter = router({
         // happened to be. This is the whole reason the old seat no longer has to
         // be retired: the preference disambiguates two active seats, so nothing
         // has to be destroyed to make resolution deterministic.
-        await setActiveHousehold(tx, user.id, redeemed.householdId);
+        await setActiveHousehold({
+          householdId: redeemed.householdId,
+          tx,
+          userId: user.id,
+        });
 
         return { householdId: redeemed.householdId, memberId: seat.id };
       });
@@ -1163,11 +1163,9 @@ export const householdRouter = router({
         // reassign an account ever again. Leaving as the last member *anywhere* is
         // fine: the household simply goes quiet, and its data stays for whoever
         // still has a balance riding on it.
-        if (
-          member.role === "owner" &&
-          others.length > 0 &&
-          !others.some((seat) => seat.role === "owner")
-        ) {
+        const remainingOwner = others.find(isOwner);
+
+        if (member.role === "owner" && others.length > 0 && !remainingOwner) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message:
@@ -1179,8 +1177,7 @@ export const householdRouter = router({
         // they must not stay pointed at a retired seat. A remaining owner
         // inherits; with nobody left there is nothing to hand them to, and the
         // household has no live member to surprise.
-        const inheritor =
-          others.find((seat) => seat.role === "owner") ?? others[0];
+        const inheritor = remainingOwner ?? others[0];
 
         if (inheritor) {
           await tx
@@ -1205,7 +1202,7 @@ export const householdRouter = router({
         // Point them somewhere they can still act. Null rather than a guess:
         // `resolveActiveMember` falls back to their oldest remaining seat, and
         // bootstraps a fresh household only if they now hold none at all.
-        await setActiveHousehold(tx, user.id, null);
+        await setActiveHousehold({ householdId: null, tx, userId: user.id });
 
         return { householdId, writtenOff };
       });

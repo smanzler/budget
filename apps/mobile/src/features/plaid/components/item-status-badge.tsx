@@ -1,8 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import { Text } from "@/components/ui/text";
-import type { RouterOutputs } from "@/lib/trpc";
+import type { PlaidItem } from "../lib/format";
 
-type Status = RouterOutputs["plaid"]["items"]["list"][number]["status"];
+type Status = PlaidItem["status"];
 
 const LABELS: Record<
   Status,

@@ -8,8 +8,6 @@ export type PendingInvite =
 /** `scheme` in app.config.ts — the app is the only thing that opens this. */
 const JOIN_LINK_PREFIX = "com.sigh10.budget://join/";
 
-const joinLink = (code: string) => `${JOIN_LINK_PREFIX}${code}`;
-
 export const useInvite = () => {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -35,9 +33,9 @@ export const useInvite = () => {
  * The address is in the message on purpose: the code is useless to anyone else,
  * and the person forwarding it has no other way to know that.
  */
-export const shareInvite = (code: string, email: string) =>
+export const shareInvite = ({ code, email }: { code: string; email: string }) =>
   Share.share({
-    message: `Let's split expenses on Budget. Open this on your phone to join:\n\n${joinLink(code)}\n\nIt only works when ${email} signs in.`,
+    message: `Let's split expenses on Budget. Open this on your phone to join:\n\n${JOIN_LINK_PREFIX}${code}\n\nIt only works when ${email} signs in.`,
   });
 
 /**

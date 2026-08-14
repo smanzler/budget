@@ -1,3 +1,4 @@
+import type { AllocationPart } from "@budget/shared";
 import {
   pgTable,
   text,
@@ -396,7 +397,7 @@ export const BankAccounts = pgTable(
     index("bank_accounts_plaid_item_id_idx").on(t.plaidItemId),
     // Was a global unique on `plaid_account_id`. Plaid account ids are unique
     // per Item, not per bank: a global unique lets a colliding id stay parented
-    // to the OLD item, after which `accountIdMap` never finds it and
+    // to the OLD item, after which `listAccountIds` never finds it and
     // `syncItemTransactions` silently drops every transaction for that account
     // forever.
     unique("bank_accounts_item_account_unique").on(
@@ -766,10 +767,16 @@ export const SplitIntents = pgTable("split_intents", {
    * `amountCents` is optional because rows written before it existed do not
    * carry it; those replay as weights, which is exactly the old behaviour.
    */
-  parts: jsonb("parts")
-    .notNull()
-    .$type<{ memberId: string; weight: number; amountCents?: number }[]>(),
+  parts: jsonb("parts").notNull().$type<SplitIntentPart[]>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+/**
+ * A member's slice as `split_intents.parts` persists it.
+ *
+ * The weight half is the shared `AllocationPart`, so the archived intent and the
+ * allocator that replays it cannot drift apart.
+ */
+export type SplitIntentPart = AllocationPart & { amountCents?: number };
 
 export * from "./auth-schema";

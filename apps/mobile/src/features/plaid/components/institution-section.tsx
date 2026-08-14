@@ -12,7 +12,8 @@ import {
 } from "@/components/section";
 import type { Member } from "@/features/household/hooks/use-household";
 import { RefreshCw, Trash2 } from "lucide-react-native";
-import { Pressable, View } from "react-native";
+import { Pressable } from "@/components/ui/pressable";
+import { View } from "react-native";
 import { usePlaidLink } from "../hooks/use-plaid-link";
 import {
   formatAccountBalance,
@@ -58,8 +59,7 @@ export function InstitutionSection({
           );
 
           return (
-            // h-auto because SectionItem hard-codes h-11 and these are two-line.
-            <SectionItem key={account.id} className="h-auto py-2">
+            <SectionItem key={account.id} size="snug">
               <View className="min-w-0 flex-1 gap-0.5">
                 <Text numberOfLines={1} className="font-medium">
                   {account.name}
@@ -83,8 +83,8 @@ export function InstitutionSection({
                       accessibilityLabel={`Sharing settings for ${account.name}`}
                       onPress={() => onEditAccount(account)}
                     >
-                      <Badge variant="secondary" className="px-1.5 py-0">
-                        <Text className="text-[10px]">
+                      <Badge variant="secondary" size="sm">
+                        <Text>
                           {owner?.displayName ?? "Former member"} ·{" "}
                           {account.isPrivate ? "Private" : "Shared"}
                         </Text>
@@ -113,10 +113,7 @@ export function InstitutionSection({
         })}
 
         {needsReconnect ? (
-          <SectionItem
-            onPress={() => void link.open(item.id)}
-            className="h-auto py-2.5"
-          >
+          <SectionItem onPress={() => void link.open(item.id)} size="tall">
             <Icon as={RefreshCw} className="text-foreground size-4" />
             <Text className="font-medium">Reconnect</Text>
             {link.isPending ? (
@@ -127,10 +124,7 @@ export function InstitutionSection({
           </SectionItem>
         ) : null}
 
-        <SectionItem
-          onPress={() => onDisconnect(item)}
-          className="h-auto py-2.5"
-        >
+        <SectionItem onPress={() => onDisconnect(item)} size="tall">
           <Icon as={Trash2} className="text-destructive size-4" />
           <Text className="text-destructive font-medium">Disconnect</Text>
         </SectionItem>

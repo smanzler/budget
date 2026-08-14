@@ -1,4 +1,9 @@
-import { allocate, toCents, type AllocationPart } from "@budget/shared";
+import {
+  allocate,
+  equalParts,
+  toCents,
+  type AllocationPart,
+} from "@budget/shared";
 import { and, eq, notInArray } from "drizzle-orm";
 import { TransactionSplits } from "../db/schema";
 import type { SharePair, Tx } from "./ledger";
@@ -103,10 +108,7 @@ export const resolveDefaultSplit = (args: {
 
   return {
     method: "shares",
-    parts: partsFromWeights(
-      totalCents,
-      memberIds.map((memberId) => ({ memberId, weight: 1 })),
-    ),
+    parts: partsFromWeights(totalCents, equalParts(memberIds)),
   };
 };
 
@@ -124,19 +126,26 @@ export const partsFromWeights = (
   }));
 };
 
+export const sumCents = (parts: readonly SplitPart[]) =>
+  parts.reduce((total, part) => total + part.amountCents, 0);
+
 /**
  * The invariant, checked after every allocation including the sync path's.
  *
  * Cheap, and the only thing standing between a rounding bug and a balance
  * nobody can reproduce.
  */
-export const assertSplitsBalance = (
-  amount: string,
-  parts: readonly SplitPart[],
-  context: string,
-) => {
+export const assertSplitsBalance = ({
+  amount,
+  context,
+  parts,
+}: {
+  amount: string;
+  context: string;
+  parts: readonly SplitPart[];
+}) => {
   const total = toCents(amount);
-  const allocated = parts.reduce((sum, part) => sum + part.amountCents, 0);
+  const allocated = sumCents(parts);
 
   if (allocated !== total) {
     throw new Error(
@@ -168,60 +177,63 @@ export const reallocateForAmountChange = (args: {
     return { ...ownerOnly(creditorMemberId, newCents), splitsStale: false };
   }
 
-  if (method !== "exact") {
-    return {
-      method,
-      parts: partsFromWeights(newCents, existing),
-      splitsStale: false,
-    };
-  }
-
-  const oldTotal = existing.reduce((sum, part) => sum + part.amountCents, 0);
-
-  // A split may legitimately omit the payer — "I paid, the two of you split it"
-  // — so there may be no row to absorb onto. Absorbing onto a notional zero and
-  // letting it join the split is what keeps that case from resetting to
-  // owner-only on the first amount change.
-  const creditor = existing.find(
-    (part) => part.memberId === creditorMemberId,
-  ) ?? { memberId: creditorMemberId, weight: 1, amountCents: 0 };
-
-  // A sign flip is a different transaction in all but name — a charge that
-  // became a refund. Nothing about the old hand-typed amounts still applies.
-  if (Math.sign(newCents) === Math.sign(oldTotal)) {
-    const absorbed = creditor.amountCents + (newCents - oldTotal);
-
-    // Without these two guards, a $100 exact split of $10 payer / $90 other
-    // that drops to $40 leaves the payer at -$50 — i.e. owed $90 on a $40
-    // dinner. Absorbing blindly invents money.
-    const flipsPayer =
-      absorbed !== 0 && Math.sign(absorbed) !== Math.sign(newCents);
-    const exceedsTotal = Math.abs(absorbed) > Math.abs(newCents);
-
-    if (!flipsPayer && !exceedsTotal) {
-      const isParticipant = existing.some(
-        (part) => part.memberId === creditorMemberId,
-      );
-
+  switch (method) {
+    case "owner":
+    case "shares":
       return {
-        method: "exact",
-        parts: isParticipant
-          ? existing.map((part) =>
-              part.memberId === creditorMemberId
-                ? { ...part, amountCents: absorbed }
-                : part,
-            )
-          : // Still nothing to their name, so they stay out of the split
-            // rather than gaining a zero-cent row nobody asked for.
-            absorbed === 0
-            ? [...existing]
-            : [...existing, { ...creditor, amountCents: absorbed }],
-        splitsStale: true,
+        method,
+        parts: partsFromWeights(newCents, existing),
+        splitsStale: false,
       };
+    case "exact": {
+      const oldTotal = sumCents(existing);
+
+      // A split may legitimately omit the payer — "I paid, the two of you split
+      // it" — so there may be no row to absorb onto. Absorbing onto a notional
+      // zero and letting it join the split is what keeps that case from
+      // resetting to owner-only on the first amount change.
+      const creditor = existing.find(
+        (part) => part.memberId === creditorMemberId,
+      ) ?? { memberId: creditorMemberId, weight: 1, amountCents: 0 };
+
+      // A sign flip is a different transaction in all but name — a charge that
+      // became a refund. Nothing about the old hand-typed amounts still applies.
+      if (Math.sign(newCents) === Math.sign(oldTotal)) {
+        const absorbed = creditor.amountCents + (newCents - oldTotal);
+
+        // Without these two guards, a $100 exact split of $10 payer / $90 other
+        // that drops to $40 leaves the payer at -$50 — i.e. owed $90 on a $40
+        // dinner. Absorbing blindly invents money.
+        const flipsPayer =
+          absorbed !== 0 && Math.sign(absorbed) !== Math.sign(newCents);
+        const exceedsTotal = Math.abs(absorbed) > Math.abs(newCents);
+
+        if (!flipsPayer && !exceedsTotal) {
+          const isParticipant = existing.some(
+            (part) => part.memberId === creditorMemberId,
+          );
+
+          return {
+            method: "exact",
+            parts: isParticipant
+              ? existing.map((part) =>
+                  part.memberId === creditorMemberId
+                    ? { ...part, amountCents: absorbed }
+                    : part,
+                )
+              : // Still nothing to their name, so they stay out of the split
+                // rather than gaining a zero-cent row nobody asked for.
+                absorbed === 0
+                ? [...existing]
+                : [...existing, { ...creditor, amountCents: absorbed }],
+            splitsStale: true,
+          };
+        }
+      }
+
+      return { ...ownerOnly(creditorMemberId, newCents), splitsStale: true };
     }
   }
-
-  return { ...ownerOnly(creditorMemberId, newCents), splitsStale: true };
 };
 
 /**

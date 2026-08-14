@@ -1,13 +1,8 @@
 import { z } from "zod";
 
-// Notification payloads are a discriminated union so the API can render a
-// title/body per type and the client can narrow on `type` when handling a tap.
-// Add a schema per notification type your app sends.
 export const systemMessageSchema = z.object({
   type: z.literal("system_message"),
-  data: z.object({
-    message: z.string(),
-  }),
+  data: z.object({ message: z.string() }),
 });
 
 /** A bank connection expired — the user has to re-authenticate through Link. */
@@ -62,6 +57,14 @@ export const settlementVoidedSchema = z.object({
   }),
 });
 
+/**
+ * Every payload the API can send, discriminated on `type`.
+ *
+ * Add a variant here and `renderNotification` in `packages/api/src/lib/notify.ts`
+ * is what fails to compile first — its switch has no `default`, so a new variant
+ * cannot ship without a title and body. Clients narrow on the same `type` when
+ * handling a tap.
+ */
 export const notificationPayloadSchema = z.discriminatedUnion("type", [
   systemMessageSchema,
   bankLoginRequiredSchema,

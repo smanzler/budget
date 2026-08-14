@@ -1,17 +1,12 @@
 import { z } from "zod";
-import { boss } from "./boss";
+import { boss, QUEUE_RETRY } from "./boss";
 import { syncItemTransactions } from "./plaid-sync";
 
 /**
  * Lives outside `boss.ts` on purpose: the sync path reaches `notify()`, which
  * needs `boss`, so registering the worker there would close an import cycle.
  */
-await boss.createQueue("plaid.sync", {
-  retryLimit: 5,
-  retryBackoff: true,
-  retryDelay: 1,
-  retryDelayMax: 300,
-});
+await boss.createQueue("plaid.sync", QUEUE_RETRY);
 
 boss.work("plaid.sync", async ([job]) => {
   const { itemId } = z.object({ itemId: z.uuid() }).parse(job?.data);

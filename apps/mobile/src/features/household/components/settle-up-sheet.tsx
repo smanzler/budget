@@ -1,9 +1,9 @@
-import { Button } from "@/components/ui/button";
+import { ApiError } from "@/components/api-error";
 import {
   Dialog,
+  DialogActions,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -14,14 +14,12 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
-import { Text } from "@/components/ui/text";
 import { fromCents } from "@budget/shared";
 import { useState } from "react";
 import { View } from "react-native";
 import { formatCents, parseAmountCents } from "@/lib/money";
-import { newSettlementId, useSettleUp } from "../hooks/use-settle-up";
-import { apiErrorMessage } from "../lib/errors";
+import { useSettleUp } from "../hooks/use-settle-up";
+import { newSettlementId } from "../lib/settlement-id";
 import { isIsoDate, todayIsoDate } from "../lib/format";
 
 export function SettleUpSheet({
@@ -42,15 +40,11 @@ export function SettleUpSheet({
 }) {
   const settle = useSettleUp();
 
-  /**
-   * ONE id per opening of the sheet, generated here rather than by the server.
-   *
-   * It is the idempotency key `settlements.create` dedupes on, so a double-tap
-   * — or a TanStack retry of a request that actually succeeded — replays the
-   * same id and is a no-op instead of a second repayment. Minting one per
-   * render would defeat exactly that, which is why it lives in state and is
-   * only rotated once the sheet closes and the payment it names is done with.
-   */
+  // ONE id per opening of the sheet. It is the idempotency key
+  // `settlements.create` dedupes on, so a double tap — or a retry of a request
+  // that succeeded — sends the same id and records no second payment. It lives
+  // in state, not in the render body, because minting one per render defeats
+  // that; `handleOpenChange` makes a new id when the sheet closes.
   const [settlementId, setSettlementId] = useState(newSettlementId);
 
   // `null` means "still showing the prefill". The outstanding amount arrives
@@ -137,33 +131,18 @@ export function SettleUpSheet({
           </Field>
         </View>
 
-        {settle.isError ? (
-          <Text className="text-destructive text-sm">
-            {apiErrorMessage(
-              settle.error,
-              "Couldn't record the payment. Please try again.",
-            )}
-          </Text>
-        ) : null}
+        <ApiError
+          error={settle.error}
+          fallback="Couldn't record the payment. Please try again."
+        />
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            disabled={settle.isPending}
-            onPress={() => handleOpenChange(false)}
-          >
-            <Text>Cancel</Text>
-          </Button>
-          <Button
-            disabled={settle.isPending || amountCents === null || !dateIsValid}
-            onPress={() => void handleSubmit()}
-          >
-            {settle.isPending ? (
-              <Spinner className="text-primary-foreground" />
-            ) : null}
-            <Text>Record payment</Text>
-          </Button>
-        </DialogFooter>
+        <DialogActions
+          confirmLabel="Record payment"
+          disabled={amountCents === null || !dateIsValid}
+          isPending={settle.isPending}
+          onCancel={() => handleOpenChange(false)}
+          onConfirm={() => void handleSubmit()}
+        />
       </DialogContent>
     </Dialog>
   );

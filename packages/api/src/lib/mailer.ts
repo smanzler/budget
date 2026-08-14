@@ -17,3 +17,16 @@ export const mailer = createTransport({
       ? { user: env.SMTP_USER, pass: env.SMTP_PASSWORD }
       : undefined,
 });
+
+/** Sends from the configured address, which is the only part every caller shares. */
+export const sendEmail = ({
+  html,
+  subject,
+  text,
+  to,
+}: {
+  html: string;
+  subject: string;
+  text: string;
+  to: string;
+}) => mailer.sendMail({ from: env.SMTP_FROM, to, subject, html, text });

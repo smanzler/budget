@@ -4,7 +4,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { formatAccountLabel } from "@/features/transactions/lib/format";
 import { TriangleAlert } from "lucide-react-native";
-import { Pressable, View } from "react-native";
+import { Pressable } from "@/components/ui/pressable";
+import { View } from "react-native";
 import { usePlaidLink } from "../hooks/use-plaid-link";
 
 /**
@@ -13,17 +14,12 @@ import { usePlaidLink } from "../hooks/use-plaid-link";
  */
 export function ConnectBankButton({
   label = "Connect a bank",
-  itemId,
   variant = "default",
-  onLinked,
 }: {
   label?: string;
-  /** Set for the reconnect path — mints an update-mode token for this item. */
-  itemId?: string;
-  variant?: "default" | "outline" | "secondary";
-  onLinked?: () => void;
+  variant?: "default" | "outline";
 }) {
-  const link = usePlaidLink({ ...(onLinked ? { onLinked } : {}) });
+  const link = usePlaidLink();
 
   // The default button is dark, the others are light — a fixed spinner color
   // would be invisible on one of them.
@@ -35,7 +31,7 @@ export function ConnectBankButton({
       <Button
         variant={variant}
         disabled={link.isPending}
-        onPress={() => void link.open(itemId)}
+        onPress={() => void link.open()}
       >
         {link.isPending ? <Spinner className={spinnerClass} /> : null}
         <Text>{label}</Text>
@@ -60,8 +56,11 @@ export function ConnectBankButton({
           <View className="min-w-0 flex-1 gap-1">
             <Text className="text-sm">
               {link.duplicate.institutionName ?? "That bank"}{" "}
-              {formatAccountLabel(link.duplicate.name, link.duplicate.mask)} is
-              already connected
+              {formatAccountLabel({
+                name: link.duplicate.name,
+                mask: link.duplicate.mask,
+              })}{" "}
+              is already connected
               {link.duplicate.inAnotherHousehold
                 ? // The serious one: the same charge can now be split — and
                   // collected — in both places, and no invariant in the app can

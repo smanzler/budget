@@ -32,7 +32,13 @@ import { householdProcedure, router } from "../../lib/trpc";
  * `LIMIT limit + 1` still returns `limit + 1` **matching** rows and the
  * existing `hasMore` logic keeps working untouched.
  */
-const visibleToMember = (householdId: string, memberId: string) =>
+const visibleToMember = ({
+  householdId,
+  memberId,
+}: {
+  householdId: string;
+  memberId: string;
+}) =>
   and(
     eq(Transactions.householdId, householdId),
     isNull(BankAccounts.excludedAt),
@@ -89,7 +95,7 @@ export const transactionsRouter = router({
           )
           .where(
             and(
-              visibleToMember(householdId, member.id),
+              visibleToMember({ householdId, memberId: member.id }),
               accountId ? eq(Transactions.bankAccountId, accountId) : undefined,
               keyset
                 ? // Row-wise comparison, so it rides the (household_id, date desc,
@@ -108,12 +114,12 @@ export const transactionsRouter = router({
         id: row.id,
       }));
 
-      const attribution = await hydrateAttribution(
-        members,
-        member.id,
+      const attribution = await hydrateAttribution({
         householdId,
-        items,
-      );
+        members,
+        transactions: items,
+        youId: member.id,
+      });
 
       return {
         items: items.map((row) => ({
@@ -155,7 +161,7 @@ export const transactionsRouter = router({
         .where(
           and(
             eq(Transactions.id, opts.input.transactionId),
-            visibleToMember(householdId, member.id),
+            visibleToMember({ householdId, memberId: member.id }),
           ),
         );
 
@@ -184,16 +190,18 @@ export const transactionsRouter = router({
         transaction: row,
         currency: row.isoCurrencyCode,
         splits: splits.map((split) => ({
-          member: toMemberRef(
-            byId.get(split.memberId),
-            split.memberId,
-            member.id,
-          ),
+          member: toMemberRef({
+            fallbackId: split.memberId,
+            member: byId.get(split.memberId),
+            youId: member.id,
+          }),
           weight: split.weight,
           amountCents: split.amountCents,
         })),
         // Everyone who *could* be given a share, so the editor can offer them.
-        members: members.map((m) => toMemberRef(m, m.id, member.id)),
+        members: members.map((seat) =>
+          toMemberRef({ fallbackId: seat.id, member: seat, youId: member.id }),
+        ),
       };
     }),
 
@@ -238,12 +246,16 @@ export const transactionsRouter = router({
     )
     .mutation(async (opts) => {
       const { householdId, member } = opts.ctx;
-      const input = opts.input;
+      const { input } = opts;
 
       // The member list doesn't depend on the transaction, so the two reads go
       // out together — this is the most latency-visible tap in the feature.
       const [transaction, members] = await Promise.all([
-        loadEditable(householdId, member.id, input.transactionId),
+        loadEditable({
+          householdId,
+          memberId: member.id,
+          transactionId: input.transactionId,
+        }),
         splittableMembers(householdId),
       ]);
       const totalCents = toCents(transaction.amount);
@@ -310,7 +322,11 @@ export const transactionsRouter = router({
       // `weight > 0` CHECK forbids a zero — so presence is the participation
       // flag instead, and "I paid, you two split it" is expressed by simply
       // leaving them out. `hydrateAttribution` re-adds them for display.
-      assertSplitsBalance(transaction.amount, parts, "setSplit");
+      assertSplitsBalance({
+        amount: transaction.amount,
+        context: "setSplit",
+        parts,
+      });
 
       await db.transaction((tx) =>
         applySplit(tx, {
@@ -331,11 +347,11 @@ export const transactionsRouter = router({
     .mutation(async (opts) => {
       const { householdId, member } = opts.ctx;
 
-      const transaction = await loadEditable(
+      const transaction = await loadEditable({
         householdId,
-        member.id,
-        opts.input.transactionId,
-      );
+        memberId: member.id,
+        transactionId: opts.input.transactionId,
+      });
       const { parts } = ownerOnly(
         transaction.creditorMemberId,
         toCents(transaction.amount),
@@ -418,11 +434,15 @@ const applySplit = async (
  * Loads a transaction for editing, refusing the cases where a split would be
  * meaningless or wrong.
  */
-const loadEditable = async (
-  householdId: string,
-  memberId: string,
-  transactionId: string,
-) => {
+const loadEditable = async ({
+  householdId,
+  memberId,
+  transactionId,
+}: {
+  householdId: string;
+  memberId: string;
+  transactionId: string;
+}) => {
   const [row] = await db
     .select({
       id: Transactions.id,
@@ -536,12 +556,17 @@ const loadEditable = async (
  * Skipped entirely for a household of one: a solo user gets byte-identical
  * behaviour to before this feature existed, and zero extra round trips.
  */
-const hydrateAttribution = async (
-  members: readonly Member[],
-  youId: string,
-  householdId: string,
-  transactions: readonly { id: string; creditorMemberId: string }[],
-) => {
+const hydrateAttribution = async ({
+  householdId,
+  members,
+  transactions,
+  youId,
+}: {
+  householdId: string;
+  members: readonly Member[];
+  transactions: readonly { id: string; creditorMemberId: string }[];
+  youId: string;
+}) => {
   const byTransaction = new Map<
     string,
     { yourShare: number | null; participants: MemberRef[] }
@@ -576,7 +601,11 @@ const hydrateAttribution = async (
     };
 
     entry.participants.push(
-      toMemberRef(byId.get(split.memberId), split.memberId, youId),
+      toMemberRef({
+        fallbackId: split.memberId,
+        member: byId.get(split.memberId),
+        youId,
+      }),
     );
 
     if (split.memberId === youId) entry.yourShare = split.amountCents;
@@ -599,7 +628,11 @@ const hydrateAttribution = async (
     }
 
     entry.participants.push(
-      toMemberRef(byId.get(creditorMemberId), creditorMemberId, youId),
+      toMemberRef({
+        fallbackId: creditorMemberId,
+        member: byId.get(creditorMemberId),
+        youId,
+      }),
     );
 
     if (creditorMemberId === youId) entry.yourShare = 0;

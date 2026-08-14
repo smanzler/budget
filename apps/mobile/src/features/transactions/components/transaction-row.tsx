@@ -30,15 +30,18 @@ export function TransactionRow({
   isFirst: boolean;
   isLast: boolean;
 }) {
-  const { text, isInflow } = formatTransactionAmount(
-    transaction.amount,
-    transaction.isoCurrencyCode,
-  );
+  const { text, isInflow } = formatTransactionAmount({
+    amount: transaction.amount,
+    currency: transaction.isoCurrencyCode,
+  });
 
   const category = formatCategory(transaction.category);
   const subtitle = [
     category,
-    formatAccountLabel(transaction.accountName, transaction.accountMask),
+    formatAccountLabel({
+      name: transaction.accountName,
+      mask: transaction.accountMask,
+    }),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -49,8 +52,7 @@ export function TransactionRow({
 
   return (
     <Link href={`/transaction/${transaction.id}`} asChild>
-      {/* h-auto overrides SectionItem's h-11 — these rows are two lines tall. */}
-      <SectionItem isFirst={isFirst} isLast={isLast} className="h-auto py-2.5">
+      <SectionItem isFirst={isFirst} isLast={isLast} size="tall">
         <MerchantLogo
           logoUrl={transaction.logoUrl}
           category={transaction.category}
@@ -69,13 +71,13 @@ export function TransactionRow({
               {subtitle}
             </Text>
             {transaction.pending ? (
-              <Badge variant="secondary" className="px-1.5 py-0">
-                <Text className="text-[10px]">Pending</Text>
+              <Badge variant="secondary" size="sm">
+                <Text>Pending</Text>
               </Badge>
             ) : null}
             {transaction.splitsStale ? (
-              <Badge variant="secondary" className="px-1.5 py-0">
-                <Text className="text-[10px]">Review split</Text>
+              <Badge variant="secondary" size="sm">
+                <Text>Review split</Text>
               </Badge>
             ) : null}
             {attribution ? (

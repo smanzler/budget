@@ -20,7 +20,13 @@ import { householdProcedure, ownerProcedure, router } from "../../lib/trpc";
  * node-postgres hands back as a **string** — every consumer below Number()s it
  * explicitly rather than letting `a + b` concatenate.
  */
-const pairBalances = (householdId: string, memberId: string) =>
+const pairBalances = ({
+  householdId,
+  memberId,
+}: {
+  householdId: string;
+  memberId: string;
+}) =>
   db.execute<{
     member_a: string;
     member_b: string;
@@ -55,7 +61,7 @@ export const balancesRouter = router({
     const { householdId, member } = opts.ctx;
 
     const [{ rows }, members, household, pending] = await Promise.all([
-      pairBalances(householdId, member.id),
+      pairBalances({ householdId, memberId: member.id }),
       db
         .select({
           id: HouseholdMembers.id,
@@ -69,7 +75,7 @@ export const balancesRouter = router({
         where: { id: householdId },
         columns: { defaultCurrency: true },
       }),
-      pendingExposure(householdId, member.id),
+      pendingExposure({ householdId, memberId: member.id }),
     ]);
 
     const byId = new Map(members.map((m) => [m.id, m]));
@@ -83,7 +89,11 @@ export const balancesRouter = router({
         // A pair always has you on exactly one side and `CHECK (debtor <>
         // creditor)` keeps the sides distinct, so `otherId` is never you and
         // this always shapes to `isYou: false`.
-        member: toMemberRef(byId.get(otherId), otherId, member.id),
+        member: toMemberRef({
+          fallbackId: otherId,
+          member: byId.get(otherId),
+          youId: member.id,
+        }),
         // Positive means they owe you. `a_owes_b` is stated from a's side, so
         // it flips when you are a.
         cents: youAreA ? -cents : cents,
@@ -102,7 +112,7 @@ export const balancesRouter = router({
     return {
       currency: household?.defaultCurrency ?? "USD",
       you: { owedToYou, youOwe },
-      pairs: pairs.sort((a, b) => Math.abs(b.cents) - Math.abs(a.cents)),
+      pairs: pairs.toSorted((a, b) => Math.abs(b.cents) - Math.abs(a.cents)),
       /**
        * Pending charges are posted to the ledger immediately, because seeing a
        * shared dinner an hour later beats seeing it in three days. The trade is
@@ -225,7 +235,13 @@ const totalsByCurrency = (
 };
 
 /** How much of your balance still rides on charges the bank hasn't posted. */
-const pendingExposure = async (householdId: string, memberId: string) => {
+const pendingExposure = async ({
+  householdId,
+  memberId,
+}: {
+  householdId: string;
+  memberId: string;
+}) => {
   const rows = await db
     .select({
       currency: LedgerEntries.isoCurrencyCode,

@@ -4,7 +4,10 @@ import { fromNodeHeaders } from "better-auth/node";
 import { auth } from "./auth";
 import { ensureHousehold, type Member } from "./household";
 
-export async function createContext({ req, res }: CreateFastifyContextOptions) {
+export const createContext = async ({
+  req,
+  res,
+}: CreateFastifyContextOptions) => {
   const { session, user } =
     (await auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
@@ -28,7 +31,7 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
     resolveMember: (forUser: Parameters<typeof ensureHousehold>[0]) =>
       (member ??= ensureHousehold(forUser)),
   };
-}
+};
 
 export type Context = Awaited<ReturnType<typeof createContext>>;
 
@@ -44,12 +47,7 @@ export const protectedProcedure = t.procedure.use((opts) => {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
 
-  return opts.next({
-    ctx: {
-      user: ctx.user,
-      session: ctx.session,
-    },
-  });
+  return opts.next({ ctx: { user: ctx.user, session: ctx.session } });
 });
 
 /**

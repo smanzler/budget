@@ -1,7 +1,6 @@
 import { useTRPC, type RouterOutputs } from "@/lib/trpc";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { Platform } from "react-native";
 import {
   createPlaidLinkSession,
   type LinkExit,
@@ -21,7 +20,7 @@ export type DuplicateAccount =
  * The client never sees an access token: it hands the one-time public token
  * straight back to the API, which does the exchange server-side.
  */
-export const usePlaidLink = ({ onLinked }: { onLinked?: () => void } = {}) => {
+export const usePlaidLink = () => {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -45,6 +44,12 @@ export const usePlaidLink = ({ onLinked }: { onLinked?: () => void } = {}) => {
     setStatus("idle");
   };
 
+  const fail = (message: string) => {
+    setError(message);
+    setStatus("error");
+    sessionRef.current = null;
+  };
+
   const handleSuccess = async (success: LinkSuccess) => {
     try {
       const linked = await exchangePublicToken.mutateAsync({
@@ -64,28 +69,23 @@ export const usePlaidLink = ({ onLinked }: { onLinked?: () => void } = {}) => {
       // hide real history, and only the user knows which is which.
       setDuplicate(linked.duplicateOf);
 
-      onLinked?.();
       finish();
     } catch (caught) {
       console.error(caught);
-      setError("We couldn't finish connecting that account.");
-      setStatus("error");
-      sessionRef.current = null;
+      fail("We couldn't finish connecting that account.");
     }
   };
 
   const handleExit = (exit: LinkExit) => {
     // No error means the user backed out on purpose. Saying anything here is a
     // classic bug — they know what they did.
-    if (exit.error) {
-      console.error(exit.error);
-      setError(exit.error.displayMessage ?? "Something went wrong in Plaid.");
-      setStatus("error");
-    } else {
-      setStatus("idle");
+    if (!exit.error) {
+      finish();
+      return;
     }
 
-    sessionRef.current = null;
+    console.error(exit.error);
+    fail(exit.error.displayMessage ?? "Something went wrong in Plaid.");
   };
 
   /** Pass an `itemId` to re-authenticate an existing connection. */
@@ -97,10 +97,9 @@ export const usePlaidLink = ({ onLinked }: { onLinked?: () => void } = {}) => {
     try {
       // Fetched on press, never prefetched: link tokens are short-lived,
       // single-session, and update mode needs a specific item.
-      const { linkToken } = await createLinkToken.mutateAsync({
-        ...(itemId ? { itemId } : {}),
-        platform: Platform.OS === "android" ? "android" : "ios",
-      });
+      const { linkToken } = await createLinkToken.mutateAsync(
+        itemId ? { itemId } : {},
+      );
 
       const session = await createPlaidLinkSession({
         token: linkToken,
@@ -117,17 +116,15 @@ export const usePlaidLink = ({ onLinked }: { onLinked?: () => void } = {}) => {
       await session.open();
     } catch (caught) {
       console.error(caught);
-      setError("We couldn't open Plaid. Please try again.");
-      setStatus("error");
-      sessionRef.current = null;
+      fail("We couldn't open Plaid. Please try again.");
     }
   };
 
   return {
-    open,
-    error,
-    duplicate,
     dismissDuplicate: () => setDuplicate(null),
+    duplicate,
+    error,
     isPending: status === "pending" || exchangePublicToken.isPending,
+    open,
   };
 };

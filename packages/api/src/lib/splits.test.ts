@@ -6,6 +6,7 @@ import {
   reallocateForAmountChange,
   resolveDefaultSplit,
   splitsToPairs,
+  sumCents,
   type SplitPart,
 } from "./splits";
 
@@ -32,9 +33,6 @@ const transaction = (
   ...over,
 });
 
-const sum = (parts: readonly SplitPart[]) =>
-  parts.reduce((total, part) => total + part.amountCents, 0);
-
 describe("resolveDefaultSplit", () => {
   const base = {
     creditorMemberId: SIMON,
@@ -51,7 +49,7 @@ describe("resolveDefaultSplit", () => {
     });
 
     expect(method).toBe("shares");
-    expect(sum(parts)).toBe(10000);
+    expect(sumCents(parts)).toBe(10000);
     expect(parts).toHaveLength(2);
   });
 
@@ -159,7 +157,7 @@ describe("resolveDefaultSplit", () => {
     });
 
     expect(parts.map((p) => p.memberId)).toContain(SIMON);
-    expect(sum(parts)).toBe(10000);
+    expect(sumCents(parts)).toBe(10000);
   });
 });
 
@@ -201,7 +199,7 @@ describe("reallocateForAmountChange", () => {
       { memberId: SIMON, weight: 1, amountCents: 2340 },
       { memberId: ANA, weight: 1, amountCents: 3000 },
     ]);
-    expect(sum(parts)).toBe(5340);
+    expect(sumCents(parts)).toBe(5340);
     expect(splitsStale).toBe(true);
   });
 
@@ -394,36 +392,36 @@ describe("splitsToPairs", () => {
 describe("assertSplitsBalance", () => {
   it("accepts an exact partition and rejects a lost cent", () => {
     expect(() =>
-      assertSplitsBalance(
-        "100.00",
-        partsFromWeights(10000, [
+      assertSplitsBalance({
+        amount: "100.00",
+        context: "test",
+        parts: partsFromWeights(10000, [
           { memberId: SIMON, weight: 1 },
           { memberId: ANA, weight: 1 },
         ]),
-        "test",
-      ),
+      }),
     ).not.toThrow();
 
     expect(() =>
-      assertSplitsBalance(
-        "100.00",
-        [
+      assertSplitsBalance({
+        amount: "100.00",
+        context: "test",
+        parts: [
           { memberId: SIMON, weight: 1, amountCents: 3333 },
           { memberId: ANA, weight: 1, amountCents: 3333 },
         ],
-        "test",
-      ),
+      }),
     ).toThrow(/partition broken/);
   });
 
   it("compares against the DB-normalized amount, not the raw string", () => {
     // plaid-sync writes String(20) as "20"; the column round-trips "20.00".
     expect(() =>
-      assertSplitsBalance(
-        "20",
-        [{ memberId: SIMON, weight: 1, amountCents: 2000 }],
-        "test",
-      ),
+      assertSplitsBalance({
+        amount: "20",
+        context: "test",
+        parts: [{ memberId: SIMON, weight: 1, amountCents: 2000 }],
+      }),
     ).not.toThrow();
   });
 });

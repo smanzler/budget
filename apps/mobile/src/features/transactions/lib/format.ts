@@ -17,10 +17,13 @@ export type FormattedAmount = {
  * signing all of them is noise; inflows get an explicit `+` and, at the call
  * site, the one bit of color on the row.
  */
-export const formatTransactionAmount = (
-  amount: string,
-  currency?: string | null,
-): FormattedAmount => {
+export const formatTransactionAmount = ({
+  amount,
+  currency,
+}: {
+  amount: string;
+  currency?: string | null;
+}): FormattedAmount => {
   // `Number("")` is 0, so an empty string would silently render as $0.00.
   const value = amount.trim() === "" ? NaN : Number(amount);
 
@@ -59,13 +62,13 @@ export const formatAttribution = (transaction: {
   if (transaction.participants.length <= 1) return null;
   if (transaction.yourShare === null) return null;
 
-  const { text } = formatTransactionAmount(
+  const { text } = formatTransactionAmount({
     // `fromCents` rather than a float divide: the shared money module exists so
     // one rounding implementation serves the client and the server, and a share
     // is exactly the number that must not disagree with the ledger.
-    fromCents(transaction.yourShare),
-    transaction.isoCurrencyCode,
-  );
+    amount: fromCents(transaction.yourShare),
+    currency: transaction.isoCurrencyCode,
+  });
 
   return {
     yourShareText: `you ${text}`,
@@ -76,24 +79,25 @@ export const formatAttribution = (transaction: {
 };
 
 /** `SM` — the two-letter stand-in when a member has no avatar image. */
-export const memberInitials = (displayName: string): string => {
-  const parts = displayName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
+export const formatMemberInitials = (displayName: string): string => {
+  const [first, second] = displayName.trim().split(/\s+/).filter(Boolean);
+  if (!first) return "?";
 
   // `charAt` returns "" rather than undefined past the end, so a one-word,
   // one-letter name simply yields a single initial.
-  const [first, second] = parts;
-
   return (
-    first!.charAt(0) + (second?.charAt(0) ?? first!.charAt(1))
+    first.charAt(0) + (second?.charAt(0) ?? first.charAt(1))
   ).toUpperCase();
 };
 
 /** `Chase Sapphire •••• 4242` — the subtitle for an account row. */
-export const formatAccountLabel = (
-  name: string,
-  mask?: string | null,
-): string => (mask ? `${name} •••• ${mask}` : name);
+export const formatAccountLabel = ({
+  name,
+  mask,
+}: {
+  name: string;
+  mask?: string | null;
+}): string => (mask ? `${name} •••• ${mask}` : name);
 
 /** `FOOD_AND_DRINK` → `Food and drink`. */
 export const formatCategory = (category?: string | null): string | null => {

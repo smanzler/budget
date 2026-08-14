@@ -1,14 +1,13 @@
-import { Button } from "@/components/ui/button";
+import { ApiError } from "@/components/api-error";
 import {
   Dialog,
+  DialogActions,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupOption } from "@/components/ui/radio-group";
-import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import type { BankAccount } from "@/features/plaid/lib/format";
 import { View } from "react-native";
@@ -18,7 +17,6 @@ import {
   useSetAccountOwner,
   useUpdateAccount,
 } from "../hooks/use-household";
-import { apiErrorMessage } from "../lib/errors";
 import { formatIsoDate, todayIsoDate } from "../lib/format";
 
 /**
@@ -62,7 +60,7 @@ export function AccountSplitSheet({
       ? (account.defaultSplitFrom ?? todayIsoDate())
       : todayIsoDate();
 
-  const ownerName = (memberId: string) =>
+  const getOwnerName = (memberId: string) =>
     members.find((member) => member.id === memberId)?.displayName ??
     "a former member";
 
@@ -145,8 +143,8 @@ export function AccountSplitSheet({
             </RadioGroup>
           ) : (
             <Text className="text-muted-foreground text-xs">
-              {ownerName(account.ownerMemberId)} — only the household owner can
-              change this.
+              {getOwnerName(account.ownerMemberId)} — only the household owner
+              can change this.
             </Text>
           )}
         </View>
@@ -164,14 +162,14 @@ export function AccountSplitSheet({
               <RadioGroupOption
                 value="private"
                 title="Private"
-                description={`Only ${ownerName(ownerMemberId)} sees these transactions, and nothing on the account is split.`}
+                description={`Only ${getOwnerName(ownerMemberId)} sees these transactions, and nothing on the account is split.`}
                 onSelect={() => setVisibility("private")}
               />
             </RadioGroup>
           ) : (
             <Text className="text-muted-foreground text-xs">
               {isPrivate ? "Private" : "Shared"} — only{" "}
-              {ownerName(account.ownerMemberId)} can change who sees this
+              {getOwnerName(account.ownerMemberId)} can change who sees this
               account.
             </Text>
           )}
@@ -182,7 +180,7 @@ export function AccountSplitSheet({
           <RadioGroup value={split} onValueChange={setSplit}>
             <RadioGroupOption
               value="owner"
-              title={`Only ${ownerName(ownerMemberId)}`}
+              title={`Only ${getOwnerName(ownerMemberId)}`}
               description="Nothing on this account is split unless you split it yourself."
               onSelect={() => setSplit("owner")}
             />
@@ -195,28 +193,15 @@ export function AccountSplitSheet({
           </RadioGroup>
         </View>
 
-        {error ? (
-          <Text className="text-destructive text-sm">
-            {apiErrorMessage(error, "Couldn't save. Please try again.")}
-          </Text>
-        ) : null}
+        <ApiError error={error} fallback="Couldn't save. Please try again." />
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            disabled={isPending}
-            onPress={() => onOpenChange(false)}
-          >
-            <Text>Cancel</Text>
-          </Button>
-          <Button
-            disabled={isPending || !isDirty}
-            onPress={() => void handleSave()}
-          >
-            {isPending ? <Spinner className="text-primary-foreground" /> : null}
-            <Text>Save</Text>
-          </Button>
-        </DialogFooter>
+        <DialogActions
+          confirmLabel="Save"
+          disabled={!isDirty}
+          isPending={isPending}
+          onCancel={() => onOpenChange(false)}
+          onConfirm={() => void handleSave()}
+        />
       </DialogContent>
     </Dialog>
   );

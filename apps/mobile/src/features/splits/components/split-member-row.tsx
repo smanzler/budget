@@ -8,7 +8,8 @@ import type { RouterOutputs } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { fromCents } from "@budget/shared";
 import { Circle, CircleCheck } from "lucide-react-native";
-import { Pressable, View } from "react-native";
+import { Pressable } from "@/components/ui/pressable";
+import { View } from "react-native";
 
 export type SplitMember =
   RouterOutputs["transactions"]["get"]["members"][number];
@@ -38,8 +39,7 @@ export function SplitMemberRow({
   const name = member.isYou ? "You" : member.displayName;
 
   return (
-    // h-auto overrides SectionItem's h-11 — an input row is taller than a label.
-    <SectionItem isFirst={isFirst} isLast={isLast} className="h-auto py-2">
+    <SectionItem isFirst={isFirst} isLast={isLast} size="snug">
       <MemberAvatar
         displayName={member.displayName}
         alt={name}
@@ -76,7 +76,12 @@ export function SplitMemberRow({
 
       {checked && amount.kind === "share" ? (
         <Text className="tabular-nums">
-          {formatTransactionAmount(fromCents(amount.cents), currency).text}
+          {
+            formatTransactionAmount({
+              amount: fromCents(amount.cents),
+              currency,
+            }).text
+          }
         </Text>
       ) : null}
 

@@ -1,9 +1,5 @@
 import { TRPCClientError } from "@trpc/client";
-import {
-  apiErrorMessage,
-  joinErrorMessage,
-  outstandingBalanceRefusal,
-} from "./errors";
+import { formatJoinError, outstandingBalanceRefusal } from "./errors";
 
 /** What a link hands the caller once the server has refused. */
 const apiError = (code: string, message: string) =>
@@ -59,28 +55,14 @@ describe("outstandingBalanceRefusal", () => {
   });
 });
 
-describe("apiErrorMessage", () => {
-  it("quotes the server", () => {
-    const error = apiError("FORBIDDEN", "Only the household owner can do that");
-
-    expect(apiErrorMessage(error, "fallback")).toBe(
-      "Only the household owner can do that",
-    );
-  });
-
-  it("falls back when the request never reached the router", () => {
-    expect(apiErrorMessage(transportError(), "fallback")).toBe("fallback");
-  });
-});
-
-describe("joinErrorMessage", () => {
+describe("formatJoinError", () => {
   it("explains the codes the join screen owns", () => {
     const error = apiError(
       "NOT_FOUND",
       "That invite is not valid for this account",
     );
 
-    expect(joinErrorMessage(error)).toContain("different email address");
+    expect(formatJoinError(error)).toContain("different email address");
   });
 
   // CONFLICT covers three refusals; only the server knows which one happened.
@@ -88,11 +70,11 @@ describe("joinErrorMessage", () => {
     const message =
       "Your current household still has bank connections, transactions or other members. Leave it before joining another one.";
 
-    expect(joinErrorMessage(apiError("CONFLICT", message))).toBe(message);
+    expect(formatJoinError(apiError("CONFLICT", message))).toBe(message);
   });
 
   it("says nothing specific about a dropped connection", () => {
-    expect(joinErrorMessage(transportError())).toBe(
+    expect(formatJoinError(transportError())).toBe(
       "Something went wrong. Please try again.",
     );
   });

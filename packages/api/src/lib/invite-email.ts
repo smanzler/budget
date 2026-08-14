@@ -24,7 +24,7 @@ const JOIN_LINK_PREFIX = "com.sigh10.budget://join/";
  * The code is spelled out as well as linked. A deep link is dead on a desktop
  * mail client, and the code typed by hand is the fallback that still works.
  */
-export function renderInviteEmail({
+export const renderInviteEmail = ({
   householdName,
   invitedByName,
   code,
@@ -34,7 +34,7 @@ export function renderInviteEmail({
   invitedByName: string;
   code: string;
   expiresInDays: number;
-}) {
+}) => {
   const heading = `${invitedByName} invited you to split expenses`;
   const link = `${JOIN_LINK_PREFIX}${code}`;
   const days = expiresInDays === 1 ? "1 day" : `${expiresInDays} days`;
@@ -102,4 +102,4 @@ On a phone with Budget installed, open: ${link}
 The invite expires in ${days}, and only works when you sign in with this email address. If you weren't expecting it, you can safely ignore this email.`;
 
   return { html, text, subject: heading };
-}
+};

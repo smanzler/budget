@@ -1,3 +1,4 @@
+import { LoadMoreButton } from "../components/load-more-button";
 import { LoadError, LoadingBlock } from "@/components/query-state";
 import { RefetchScroll } from "@/components/refetch-scroll";
 import { Section, SectionContent, SectionItem } from "@/components/section";
@@ -11,7 +12,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Icon } from "@/components/ui/icon";
-import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { formatDayHeading } from "@/features/transactions/lib/group";
 import { cn } from "@/lib/utils";
@@ -40,7 +40,7 @@ const KIND_LABEL = {
  * "Luigi's" long after its transaction has been purged — and a voided payment
  * reads "Voided", which is why the reversal is legible as its own row.
  */
-const entryTitle = (entry: ActivityEntry, name: string): string => {
+const formatEntryTitle = (entry: ActivityEntry, name: string): string => {
   if (entry.memo) return entry.memo;
 
   switch (entry.kind) {
@@ -50,7 +50,7 @@ const entryTitle = (entry: ActivityEntry, name: string): string => {
       return entry.cents > 0 ? `You paid ${name}` : `${name} paid you`;
     case "adjustment":
       return "Adjustment";
-    default:
+    case "share":
       return "Shared purchase";
   }
 };
@@ -110,7 +110,7 @@ export function PairActivity() {
       >
         <View className="gap-3">
           <Text className="text-2xl font-semibold tabular-nums">
-            {formatOwes(name, netCents, pairCurrency)}
+            {formatOwes({ name, cents: netCents, currency: pairCurrency })}
           </Text>
 
           {netCents < 0 ? (
@@ -127,13 +127,11 @@ export function PairActivity() {
                 key={entry.id}
                 isFirst={index === 0}
                 isLast={index === entries.length - 1}
-                // h-auto overrides SectionItem's h-11 — these rows are two
-                // lines tall.
-                className="h-auto py-2.5"
+                size="tall"
               >
                 <View className="min-w-0 flex-1 gap-0.5">
                   <Text numberOfLines={1} className="font-medium">
-                    {entryTitle(entry, name)}
+                    {formatEntryTitle(entry, name)}
                   </Text>
 
                   <View className="flex-row items-center gap-1.5">
@@ -141,10 +139,8 @@ export function PairActivity() {
                       {formatDayHeading(entry.effectiveDate)}
                     </Text>
                     {entry.kind === "share" ? null : (
-                      <Badge variant="secondary" className="px-1.5 py-0">
-                        <Text className="text-[10px]">
-                          {KIND_LABEL[entry.kind]}
-                        </Text>
+                      <Badge variant="secondary" size="sm">
+                        <Text>{KIND_LABEL[entry.kind]}</Text>
                       </Badge>
                     )}
                   </View>
@@ -163,18 +159,11 @@ export function PairActivity() {
           </SectionContent>
         </Section>
 
-        {query.hasNextPage ? (
-          <Button
-            variant="outline"
-            disabled={query.isFetchingNextPage}
-            onPress={loadMore}
-          >
-            {query.isFetchingNextPage ? (
-              <Spinner className="text-foreground" />
-            ) : null}
-            <Text>Load more</Text>
-          </Button>
-        ) : null}
+        <LoadMoreButton
+          hasNextPage={query.hasNextPage}
+          isFetchingNextPage={query.isFetchingNextPage}
+          onPress={loadMore}
+        />
       </RefetchScroll>
 
       {/* Outside RefetchScroll: on iOS DialogOverlay wraps itself in a

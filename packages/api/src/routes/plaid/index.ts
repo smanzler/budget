@@ -27,19 +27,32 @@ const DAYS_REQUESTED = 730;
 /** A sync that outruns this keeps going in the background; we just stop waiting. */
 const SYNC_NOW_TIMEOUT_MS = 20_000;
 
-const householdItem = async (itemId: string, householdId: string) => {
+const householdItem = async ({
+  householdId,
+  itemId,
+}: {
+  householdId: string;
+  itemId: string;
+}) => {
   const item = await db.query.PlaidItems.findFirst({
     where: { id: itemId, householdId },
   });
 
-  if (!item)
+  if (!item) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Item not found" });
+  }
 
   return item;
 };
 
 /** The rows one item is responsible for, always scoped to the household too. */
-const underItem = (householdId: string, plaidItemId: string) =>
+const underItem = ({
+  householdId,
+  plaidItemId,
+}: {
+  householdId: string;
+  plaidItemId: string;
+}) =>
   and(
     eq(Transactions.householdId, householdId),
     eq(BankAccounts.plaidItemId, plaidItemId),
@@ -52,21 +65,13 @@ export const plaidRouter = router({
    * whose credentials expired.
    */
   createLinkToken: householdProcedure
-    .input(
-      z.object({
-        itemId: z.uuid().optional(),
-        // Reserved for OAuth institutions, which need `android_package_name`
-        // on Android and a universal-link `redirect_uri` on iOS. Taking it now
-        // means the signature does not change when OAuth lands.
-        platform: z.enum(["ios", "android"]),
-      }),
-    )
+    .input(z.object({ itemId: z.uuid().optional() }))
     .mutation(async (opts) => {
       const { user, householdId } = opts.ctx;
       const { itemId } = opts.input;
 
       const updateFor = itemId
-        ? await householdItem(itemId, householdId)
+        ? await householdItem({ householdId, itemId })
         : null;
 
       // Disconnecting nulls the credential, and update mode has nothing to
@@ -237,7 +242,10 @@ export const plaidRouter = router({
       .input(z.object({ itemId: z.uuid() }))
       .query(async (opts) => {
         const { householdId } = opts.ctx;
-        const item = await householdItem(opts.input.itemId, householdId);
+        const item = await householdItem({
+          householdId,
+          itemId: opts.input.itemId,
+        });
 
         // Both walk the item's whole history, and neither depends on the other.
         const [[counted], outstanding] = await Promise.all([
@@ -248,7 +256,7 @@ export const plaidRouter = router({
               BankAccounts,
               eq(BankAccounts.id, Transactions.bankAccountId),
             )
-            .where(underItem(householdId, item.id)),
+            .where(underItem({ householdId, plaidItemId: item.id })),
           db
             .select({
               currency: LedgerEntries.isoCurrencyCode,
@@ -266,7 +274,7 @@ export const plaidRouter = router({
             .where(
               and(
                 eq(LedgerEntries.householdId, householdId),
-                underItem(householdId, item.id),
+                underItem({ householdId, plaidItemId: item.id }),
               ),
             )
             .groupBy(LedgerEntries.isoCurrencyCode)
@@ -301,7 +309,10 @@ export const plaidRouter = router({
       .input(z.object({ itemId: z.uuid() }))
       .mutation(async (opts) => {
         const { user, householdId } = opts.ctx;
-        const item = await householdItem(opts.input.itemId, householdId);
+        const item = await householdItem({
+          householdId,
+          itemId: opts.input.itemId,
+        });
 
         // Refused *before* the revoke, not only by the UPDATE below. Everyone in
         // the household can name this item, `itemRemove` is irreversible, and
@@ -367,7 +378,10 @@ export const plaidRouter = router({
       .input(z.object({ itemId: z.uuid(), confirm: z.literal(true) }))
       .mutation(async (opts) => {
         const { user, householdId } = opts.ctx;
-        const item = await householdItem(opts.input.itemId, householdId);
+        const item = await householdItem({
+          householdId,
+          itemId: opts.input.itemId,
+        });
 
         // The same gate as `remove`, and for a stronger reason: this one is
         // irreversible and destroys history the whole household can see. Anyone
@@ -398,7 +412,7 @@ export const plaidRouter = router({
               BankAccounts,
               eq(BankAccounts.id, Transactions.bankAccountId),
             )
-            .where(underItem(householdId, item.id));
+            .where(underItem({ householdId, plaidItemId: item.id }));
 
           // Deleting your data must not delete what you owe. `transaction_id` is
           // a convenience join, not the entry — the amount, memo and date were
@@ -421,7 +435,7 @@ export const plaidRouter = router({
                       BankAccounts,
                       eq(BankAccounts.id, Transactions.bankAccountId),
                     )
-                    .where(underItem(householdId, item.id)),
+                    .where(underItem({ householdId, plaidItemId: item.id })),
                 ),
               ),
             );
@@ -454,7 +468,7 @@ export const plaidRouter = router({
       const itemId = opts.input?.itemId;
 
       const items: { id: string; status: string }[] = itemId
-        ? [await householdItem(itemId, householdId)]
+        ? [await householdItem({ householdId, itemId })]
         : await db.query.PlaidItems.findMany({
             where: { householdId },
             columns: { id: true, status: true },

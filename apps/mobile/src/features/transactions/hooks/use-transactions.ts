@@ -1,3 +1,4 @@
+import { buildLoadMore } from "@/lib/query";
 import { useTRPC } from "@/lib/trpc";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { groupByDay } from "../lib/group";
@@ -18,12 +19,7 @@ export const useTransactions = () => {
   const transactions = query.data?.pages.flatMap((page) => page.items) ?? [];
   const sections = groupByDay(transactions);
 
-  const loadMore = () => {
-    // onEndReached fires spuriously, including on an empty list.
-    if (query.hasNextPage && !query.isFetchingNextPage) {
-      void query.fetchNextPage();
-    }
-  };
+  const loadMore = buildLoadMore(query);
 
   return { query, sections, loadMore };
 };

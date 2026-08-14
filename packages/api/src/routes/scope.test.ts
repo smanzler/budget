@@ -54,10 +54,10 @@ type User = typeof users.$inferSelect;
 
 const caller = (user: User) =>
   appRouter.createCaller({
-    req: {} as never,
-    res: {} as never,
-    user: user as never,
-    session: { id: "session", userId: user.id } as never,
+    user,
+    // @ts-expect-error only `userId` is ever read off the session here, and
+    // `req`/`res` are never touched by a procedure.
+    session: { id: "session", userId: user.id },
     // One caller is one request, so the real per-request memo would be a no-op
     // here — every call goes through the same lookup the middleware makes.
     resolveMember: ensureHousehold,

@@ -9,23 +9,33 @@ test("runs in a UTC-negative timezone", () => {
   expect(new Date(2026, 7, 12).getTimezoneOffset()).toBeGreaterThan(0);
 });
 
-const tx = (overrides: Partial<Transaction>): Transaction =>
-  ({
-    id: "t1",
-    amount: "10.00",
-    isoCurrencyCode: "USD",
-    date: "2026-08-12",
-    name: "Coffee",
-    merchantName: null,
-    category: null,
-    categoryDetailed: null,
-    pending: false,
-    logoUrl: null,
-    bankAccountId: "a1",
-    accountName: "Sapphire",
-    accountMask: "4242",
-    ...overrides,
-  }) as Transaction;
+// Spelled out in full rather than cast: a cast would hide any field the wire
+// type gains, and `formatAttribution` reads three of them.
+const BASE: Transaction = {
+  id: "t1",
+  amount: "10.00",
+  isoCurrencyCode: "USD",
+  date: "2026-08-12",
+  name: "Coffee",
+  merchantName: null,
+  category: null,
+  categoryDetailed: null,
+  pending: false,
+  logoUrl: null,
+  bankAccountId: "a1",
+  accountName: "Sapphire",
+  accountMask: "4242",
+  creditorMemberId: "m1",
+  splitMethod: "owner",
+  splitsStale: false,
+  yourShare: null,
+  participants: [],
+};
+
+const tx = (overrides: Partial<Transaction>): Transaction => ({
+  ...BASE,
+  ...overrides,
+});
 
 describe("formatDayHeading", () => {
   test("late evening in a UTC-negative zone still says Today", () => {

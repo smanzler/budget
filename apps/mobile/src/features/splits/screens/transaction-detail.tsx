@@ -51,15 +51,15 @@ export function TransactionDetail({
   }
 
   const { transaction, currency, members } = detail;
-  const { text, isInflow } = formatTransactionAmount(
-    transaction.amount,
+  const { text, isInflow } = formatTransactionAmount({
+    amount: transaction.amount,
     currency,
-  );
+  });
 
-  const account = formatAccountLabel(
-    transaction.accountName,
-    transaction.accountMask,
-  );
+  const account = formatAccountLabel({
+    name: transaction.accountName,
+    mask: transaction.accountMask,
+  });
 
   // Everything below this line is a household surface, and a household of one
   // must not see any of it — no payer, no editor, just the transaction.

@@ -8,10 +8,13 @@ export type BankAccount = PlaidItem["accounts"][number];
  * Balances arrive as `numeric` strings and are frequently null — credit cards
  * often report no `available`. Render a dash rather than a misleading 0.
  */
-const formatBalanceValue = (
-  value: string | null,
-  currency: string | null,
-): string => {
+const formatBalanceValue = ({
+  value,
+  currency,
+}: {
+  value: string | null;
+  currency: string | null;
+}): string => {
   if (value === null || value.trim() === "") return "—";
 
   const parsed = Number(value);
@@ -28,7 +31,10 @@ export const formatAccountBalance = (account: BankAccount) => {
   const isCredit = account.type === "credit";
 
   return {
-    text: formatBalanceValue(account.currentBalance, account.isoCurrencyCode),
+    text: formatBalanceValue({
+      value: account.currentBalance,
+      currency: account.isoCurrencyCode,
+    }),
     caption: isCredit ? "Owed" : null,
   };
 };

@@ -1,9 +1,14 @@
+import { Icon } from "@/components/ui/icon";
+import { Pressable } from "@/components/ui/pressable";
 import { Text, TextClassContext } from "@/components/ui/text";
 import { cn } from "@/lib/utils";
+import { cva, type VariantProps } from "class-variance-authority";
 import { ChevronRight } from "lucide-react-native";
 import React from "react";
-import { TouchableOpacity, View, type ViewProps } from "react-native";
-import { Icon } from "./ui/icon";
+import { View, type ViewProps } from "react-native";
+
+/** Which edges of the card a row draws. See SectionItem. */
+type SectionItemEdges = { isFirst?: boolean; isLast?: boolean };
 
 function Section({
   className,
@@ -49,6 +54,11 @@ function SectionDescription({
   );
 }
 
+const isSectionItem = (
+  child: React.ReactNode,
+): child is React.ReactElement<SectionItemEdges> =>
+  React.isValidElement(child) && child.type === SectionItem;
+
 function SectionContent({
   className,
   children,
@@ -66,17 +76,11 @@ function SectionContent({
       {...props}
     >
       {React.Children.map(children, (child, index) =>
-        React.isValidElement(child) && child.type === SectionItem
-          ? React.cloneElement(
-              child as React.ReactElement<{
-                isFirst?: boolean;
-                isLast?: boolean;
-              }>,
-              {
-                isFirst: index === 0,
-                isLast: index === count - 1,
-              },
-            )
+        isSectionItem(child)
+          ? React.cloneElement(child, {
+              isFirst: index === 0,
+              isLast: index === count - 1,
+            })
           : child,
       )}
     </View>
@@ -91,22 +95,38 @@ function SectionContent({
  * its children, but a virtualized list (which never has all rows at once) can
  * pass the same flags per item and get an identical card.
  */
+const sectionItemVariants = cva(
+  "bg-card border-border flex-row gap-3 px-3 items-center border-x",
+  {
+    variants: {
+      size: {
+        /** One line of text, fixed height. */
+        default: "h-11",
+        /** Two lines, tight — a row whose subtitle is a chip or a balance. */
+        snug: "h-auto py-2",
+        /** Two lines — a row with a title and a caption under it. */
+        tall: "h-auto py-2.5",
+      },
+    },
+    defaultVariants: { size: "default" },
+  },
+);
+
 function SectionItem({
   className,
   isFirst,
   isLast,
   onPress,
+  size,
   ...viewProps
 }: ViewProps &
-  React.RefAttributes<View> & {
-    onPress?: () => void;
-    isFirst?: boolean;
-    isLast?: boolean;
-  }) {
+  React.RefAttributes<View> &
+  SectionItemEdges &
+  VariantProps<typeof sectionItemVariants> & { onPress?: () => void }) {
   const content = (
     <View
       className={cn(
-        "bg-card border-border flex-row gap-3 h-11 px-3 items-center border-x",
+        sectionItemVariants({ size }),
         isFirst === true && "rounded-t-xl border-t",
         // The last row closes the card; every other row's bottom edge is the
         // separator between it and the next one.
@@ -119,9 +139,9 @@ function SectionItem({
 
   if (onPress != null) {
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <Pressable onPress={onPress} className="active:opacity-70">
         {content}
-      </TouchableOpacity>
+      </Pressable>
     );
   }
 

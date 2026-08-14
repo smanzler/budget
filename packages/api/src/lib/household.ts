@@ -2,6 +2,27 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import db from "../db";
 import { HouseholdMembers, Households, UserHouseholdPrefs } from "../db/schema";
 
+/**
+ * The one spelling of an email address the app compares against.
+ *
+ * Invite acceptance authorizes on this comparison, so both sides of it have to
+ * normalize the same way.
+ */
+export const toNormalizedEmail = (email: string) => email.trim().toLowerCase();
+
+/**
+ * Whether the household has ever posted to the ledger — the test that locks its
+ * currency, because a posted entry carries one and nothing re-denominates it.
+ */
+export const hasPostedEntries = async (householdId: string) => {
+  const posted = await db.query.LedgerEntries.findFirst({
+    where: { householdId },
+    columns: { id: true },
+  });
+
+  return posted !== undefined;
+};
+
 /** The seat a request acts as. Resolved from the session, never from input. */
 export type Member = typeof HouseholdMembers.$inferSelect;
 
@@ -154,11 +175,15 @@ const bootstrapHousehold = (user: {
  * Points a user at a household. Call only after proving they hold an active seat
  * in it — this writes a preference, it does not check one.
  */
-export const setActiveHousehold = (
-  tx: Pick<typeof db, "insert">,
-  userId: string,
-  householdId: string | null,
-) =>
+export const setActiveHousehold = ({
+  householdId,
+  tx,
+  userId,
+}: {
+  householdId: string | null;
+  tx: Pick<typeof db, "insert">;
+  userId: string;
+}) =>
   tx
     .insert(UserHouseholdPrefs)
     .values({ userId, activeHouseholdId: householdId })
@@ -182,13 +207,17 @@ export type MemberRef = {
  * seat can be removed after it earned history — so the lookup is allowed to
  * miss, and the fallback is stated once here rather than at each call site.
  */
-export const toMemberRef = (
+export const toMemberRef = ({
+  fallbackId,
+  member,
+  youId,
+}: {
+  fallbackId: string;
   member:
     | { id: string; displayName: string; status: MemberRef["status"] }
-    | undefined,
-  fallbackId: string,
-  youId: string,
-): MemberRef => ({
+    | undefined;
+  youId: string;
+}): MemberRef => ({
   id: member?.id ?? fallbackId,
   // A removed seat still owns history, so it must still render with a name.
   displayName: member?.displayName ?? "Former member",

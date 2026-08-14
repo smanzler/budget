@@ -59,7 +59,7 @@ export function MemberList({
       ))}
 
       {isOwner ? (
-        <SectionItem onPress={onInvite} className="h-auto py-2.5">
+        <SectionItem onPress={onInvite} size="tall">
           <Icon as={UserPlus} className="text-foreground size-4" />
           <Text className="font-medium">Invite someone</Text>
         </SectionItem>

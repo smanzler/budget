@@ -1,3 +1,4 @@
+import { buildLoadMore } from "@/lib/query";
 import { useTRPC, type RouterOutputs } from "@/lib/trpc";
 import {
   useInfiniteQuery,
@@ -29,11 +30,7 @@ export const useSettlements = () => {
 
   const settlements = query.data?.pages.flatMap((page) => page.items) ?? [];
 
-  const loadMore = () => {
-    if (query.hasNextPage && !query.isFetchingNextPage) {
-      void query.fetchNextPage();
-    }
-  };
+  const loadMore = buildLoadMore(query);
 
   return { query, settlements, loadMore };
 };

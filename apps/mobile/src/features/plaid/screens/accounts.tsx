@@ -104,10 +104,7 @@ export function Accounts() {
           // has to read as an offer rather than as a setting.
           <Section>
             <SectionContent>
-              <SectionItem
-                onPress={() => setInviteOpen(true)}
-                className="h-auto py-2.5"
-              >
+              <SectionItem onPress={() => setInviteOpen(true)} size="tall">
                 <Icon as={UsersRound} className="text-foreground size-4" />
                 <Text className="font-medium">Split with someone</Text>
                 <SectionItemContent />
@@ -116,10 +113,7 @@ export function Accounts() {
                   email or shows up on Transactions by itself, so this is only
                   for a code read off somebody else's screen — which is exactly
                   the case that has nowhere else to go. */}
-              <SectionItem
-                onPress={() => router.push("/join")}
-                className="h-auto py-2.5"
-              >
+              <SectionItem onPress={() => router.push("/join")} size="tall">
                 <Icon as={KeyRound} className="text-foreground size-4" />
                 <Text className="font-medium">I have an invite code</Text>
                 <SectionItemContent />

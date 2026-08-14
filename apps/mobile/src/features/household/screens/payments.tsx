@@ -1,3 +1,4 @@
+import { LoadMoreButton } from "../components/load-more-button";
 import { LoadError, LoadingBlock } from "@/components/query-state";
 import { RefetchScroll } from "@/components/refetch-scroll";
 import { Section, SectionContent, SectionItem } from "@/components/section";
@@ -32,10 +33,10 @@ import {
   useVoidSettlement,
   type Settlement,
 } from "../hooks/use-settlements";
-import { apiErrorMessage } from "../lib/errors";
+import { formatApiError } from "@/lib/errors";
 
 /** "You paid Sam", "Sam paid you", "Sam paid Alex". */
-const describe = (settlement: Settlement): string => {
+const formatSettlementLine = (settlement: Settlement): string => {
   if (settlement.youPaid) return `You paid ${settlement.toDisplayName}`;
   if (settlement.youAreParty) return `${settlement.fromDisplayName} paid you`;
 
@@ -73,7 +74,7 @@ export function Payments() {
     } catch (caught) {
       console.error(caught);
       setError(
-        apiErrorMessage(caught, "Couldn't void this payment. Try again."),
+        formatApiError(caught, "Couldn't void this payment. Try again."),
       );
     }
   };
@@ -114,7 +115,7 @@ export function Payments() {
                 key={settlement.id}
                 isFirst={index === 0}
                 isLast={index === settlements.length - 1}
-                className="h-auto py-2.5"
+                size="tall"
                 // Voided payments stay on the list and stay untappable: the
                 // record of a withdrawn claim is the point, and there is nothing
                 // left to do to it.
@@ -136,7 +137,7 @@ export function Payments() {
                         "text-muted-foreground line-through",
                     )}
                   >
-                    {describe(settlement)}
+                    {formatSettlementLine(settlement)}
                   </Text>
 
                   <View className="flex-row items-center gap-1.5">
@@ -149,8 +150,8 @@ export function Payments() {
                       </Text>
                     ) : null}
                     {settlement.voidedAt !== null ? (
-                      <Badge variant="secondary" className="px-1.5 py-0">
-                        <Text className="text-[10px]">Voided</Text>
+                      <Badge variant="secondary" size="sm">
+                        <Text>Voided</Text>
                       </Badge>
                     ) : null}
                   </View>
@@ -173,18 +174,11 @@ export function Payments() {
           </SectionContent>
         </Section>
 
-        {query.hasNextPage ? (
-          <Button
-            variant="outline"
-            disabled={query.isFetchingNextPage}
-            onPress={loadMore}
-          >
-            {query.isFetchingNextPage ? (
-              <Spinner className="text-foreground" />
-            ) : null}
-            <Text>Load more</Text>
-          </Button>
-        ) : null}
+        <LoadMoreButton
+          hasNextPage={query.hasNextPage}
+          isFetchingNextPage={query.isFetchingNextPage}
+          onPress={loadMore}
+        />
       </RefetchScroll>
 
       {/* Outside RefetchScroll: on iOS DialogOverlay wraps itself in a
@@ -200,7 +194,7 @@ export function Payments() {
             <DialogTitle>Void this payment?</DialogTitle>
             <DialogDescription>
               {pending
-                ? `${describe(pending)} ${formatCents(
+                ? `${formatSettlementLine(pending)} ${formatCents(
                     pending.amountCents,
                     pending.isoCurrencyCode,
                   )} on ${formatDayHeading(pending.settledOn)}. Voiding puts that back on the balance and both of you will see it was taken back — the payment stays on the list, struck through.`

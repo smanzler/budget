@@ -1,15 +1,9 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Text } from "@/components/ui/text";
-import { memberInitials } from "@/features/transactions/lib/format";
+import { formatMemberInitials } from "@/features/transactions/lib/format";
 import { cn } from "@/lib/utils";
 
-/**
- * A member's face — initials until there is a picture to show.
- *
- * One component rather than the same Avatar/AvatarFallback/initials block at
- * four call sites: when these gain real images, this is the only file that has
- * to learn about them.
- */
+/** A member's face — initials until there is a picture to show. */
 export function MemberAvatar({
   displayName,
   alt = displayName,
@@ -26,7 +20,7 @@ export function MemberAvatar({
     <Avatar alt={alt} className={className}>
       <AvatarFallback>
         <Text className={cn("text-[11px] font-medium", textClassName)}>
-          {memberInitials(displayName)}
+          {formatMemberInitials(displayName)}
         </Text>
       </AvatarFallback>
     </Avatar>

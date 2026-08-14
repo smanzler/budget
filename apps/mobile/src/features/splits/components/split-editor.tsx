@@ -116,7 +116,7 @@ export function SplitEditor({ detail }: { detail: TransactionDetail }) {
         }
       : { kind: "share", cents: preview?.get(memberId) ?? 0 };
 
-  const save = () => {
+  const handleSave = () => {
     if (mode === "equal") {
       setSplit.mutate({
         transactionId: transaction.id,
@@ -136,7 +136,7 @@ export function SplitEditor({ detail }: { detail: TransactionDetail }) {
     });
   };
 
-  const splitWithEveryone = () => {
+  const handleSplitWithEveryone = () => {
     const memberIds = members.map((member) => member.id);
 
     setMode("equal");
@@ -148,7 +148,7 @@ export function SplitEditor({ detail }: { detail: TransactionDetail }) {
     });
   };
 
-  const payerOnly = () => {
+  const handlePayerOnly = () => {
     setMode("equal");
     setIncluded(
       members.some((member) => member.id === transaction.creditorMemberId)
@@ -232,7 +232,7 @@ export function SplitEditor({ detail }: { detail: TransactionDetail }) {
         </View>
       ) : null}
 
-      <Button disabled={!canSave} onPress={save}>
+      <Button disabled={!canSave} onPress={handleSave}>
         {setSplit.isPending ? (
           <Spinner className="text-primary-foreground" />
         ) : null}
@@ -246,7 +246,7 @@ export function SplitEditor({ detail }: { detail: TransactionDetail }) {
           size="sm"
           className="flex-1"
           disabled={isBusy}
-          onPress={splitWithEveryone}
+          onPress={handleSplitWithEveryone}
         >
           <Text>Split with everyone</Text>
         </Button>
@@ -256,7 +256,7 @@ export function SplitEditor({ detail }: { detail: TransactionDetail }) {
           size="sm"
           className="flex-1"
           disabled={isBusy}
-          onPress={payerOnly}
+          onPress={handlePayerOnly}
         >
           {/* Named when somebody else paid: this button hands them the whole
               amount, and calling that "Just me" would be a lie. */}

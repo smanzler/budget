@@ -32,7 +32,10 @@ import { Text } from "@/components/ui/text";
 import { View } from "react-native";
 import { Coins, UsersRound } from "lucide-react-native";
 import { useState } from "react";
-import { CurrencySheet, currencyLabel } from "../components/currency-sheet";
+import {
+  CurrencySheet,
+  formatCurrencyLabel,
+} from "../components/currency-sheet";
 import { InviteSheet } from "../components/invite-sheet";
 import { MemberList } from "../components/member-list";
 import {
@@ -42,7 +45,8 @@ import {
   useTransferOwnership,
   type Member,
 } from "../hooks/use-household";
-import { apiErrorMessage, outstandingBalanceRefusal } from "../lib/errors";
+import { formatApiError } from "@/lib/errors";
+import { outstandingBalanceRefusal } from "../lib/errors";
 import { useRouter } from "expo-router";
 
 export function Household() {
@@ -57,9 +61,9 @@ export function Household() {
   const [pending, setPending] = useState<Member | null>(null);
   const [pendingOwner, setPendingOwner] = useState<Member | null>(null);
   const [leaving, setLeaving] = useState(false);
-  /** The server's sentence naming what they still owe; set only after it refuses. */
+  // The server's own sentence naming what they still owe. Set only once it has
+  // refused, so a null here means "no refusal yet", not "nothing owed".
   const [outstanding, setOutstanding] = useState<string | null>(null);
-  /** The same, for your own balance when you try to leave. */
   const [leaveOutstanding, setLeaveOutstanding] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [leaveError, setLeaveError] = useState<string | null>(null);
@@ -93,7 +97,7 @@ export function Household() {
       }
 
       console.error(caught);
-      setError(apiErrorMessage(caught, "Couldn't remove them. Try again."));
+      setError(formatApiError(caught, "Couldn't remove them. Try again."));
     }
   };
 
@@ -108,7 +112,7 @@ export function Household() {
     } catch (caught) {
       console.error(caught);
       setError(
-        apiErrorMessage(caught, "Couldn't hand over the household. Try again."),
+        formatApiError(caught, "Couldn't hand over the household. Try again."),
       );
     }
   };
@@ -135,7 +139,7 @@ export function Household() {
       }
 
       console.error(caught);
-      setLeaveError(apiErrorMessage(caught, "Couldn't leave. Try again."));
+      setLeaveError(formatApiError(caught, "Couldn't leave. Try again."));
     }
   };
 
@@ -233,12 +237,16 @@ export function Household() {
               </Text>
               {household.isOwner && household.data?.currencyLocked !== true ? (
                 <SectionItemContent>
-                  {currencyLabel(household.data?.defaultCurrency ?? "USD")}
+                  {formatCurrencyLabel(
+                    household.data?.defaultCurrency ?? "USD",
+                  )}
                 </SectionItemContent>
               ) : (
                 <View className="ml-auto">
                   <Text className="text-muted-foreground">
-                    {currencyLabel(household.data?.defaultCurrency ?? "USD")}
+                    {formatCurrencyLabel(
+                      household.data?.defaultCurrency ?? "USD",
+                    )}
                   </Text>
                 </View>
               )}

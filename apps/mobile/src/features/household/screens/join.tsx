@@ -15,7 +15,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { TriangleAlert, UsersRound } from "lucide-react-native";
 import { View } from "react-native";
 import { useAcceptInvite } from "../hooks/use-invite";
-import { joinErrorMessage } from "../lib/errors";
+import { formatJoinError } from "../lib/errors";
 
 /**
  * Where `com.sigh10.budget://join/<code>` lands.
@@ -93,7 +93,7 @@ export function Join() {
 
         {accept.isError ? (
           <Text className="text-destructive text-center text-sm">
-            {joinErrorMessage(accept.error)}
+            {formatJoinError(accept.error)}
           </Text>
         ) : null}
       </EmptyContent>
