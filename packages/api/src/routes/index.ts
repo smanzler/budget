@@ -1,13 +1,19 @@
 import { router } from "../lib/trpc";
+import { balancesRouter } from "./balances";
 import { filesRouter } from "./files";
+import { householdRouter } from "./household";
 import { notificationsRouter } from "./notifications";
 import { plaidRouter } from "./plaid";
+import { settlementsRouter } from "./settlements";
 import { transactionsRouter } from "./transactions";
 
 export const appRouter = router({
+  balances: balancesRouter,
   files: filesRouter,
+  household: householdRouter,
   notifications: notificationsRouter,
   plaid: plaidRouter,
+  settlements: settlementsRouter,
   transactions: transactionsRouter,
 });
 

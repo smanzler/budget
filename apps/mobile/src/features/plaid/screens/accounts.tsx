@@ -1,18 +1,24 @@
+import { LoadError, LoadingBlock } from "@/components/query-state";
 import { RefetchScroll } from "@/components/refetch-scroll";
-import { Button } from "@/components/ui/button";
 import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
+  Section,
+  SectionContent,
+  SectionHeader,
+  SectionItem,
+  SectionItemContent,
+  SectionTitle,
+} from "@/components/section";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
+import { AccountSplitSheet } from "@/features/household/components/account-split-sheet";
+import { InviteSheet } from "@/features/household/components/invite-sheet";
+import { MemberList } from "@/features/household/components/member-list";
+import { useHousehold } from "@/features/household/hooks/use-household";
 import { authClient } from "@/lib/auth-client";
-import { TriangleAlert } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { UsersRound } from "lucide-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 import { AccountsEmpty } from "../components/accounts-empty";
@@ -21,15 +27,25 @@ import { DisconnectItemDialog } from "../components/disconnect-item-dialog";
 import { InstitutionSection } from "../components/institution-section";
 import { usePlaidItems } from "../hooks/use-plaid-items";
 import { useSyncNow } from "../hooks/use-sync-now";
-import { formatLastSynced, type PlaidItem } from "../lib/format";
+import {
+  formatLastSynced,
+  type BankAccount,
+  type PlaidItem,
+} from "../lib/format";
 
 export function Accounts() {
   const items = usePlaidItems();
   const syncNow = useSyncNow();
+  const household = useHousehold();
+  const router = useRouter();
 
   const [pendingDisconnect, setPendingDisconnect] = useState<PlaidItem | null>(
     null,
   );
+  const [pendingAccount, setPendingAccount] = useState<BankAccount | null>(
+    null,
+  );
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const lastSyncedAt = items.data
     ?.map((item) => item.lastSyncedAt)
@@ -43,22 +59,10 @@ export function Accounts() {
         refetch={items.refetch}
         isEmpty
         empty={
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Icon as={TriangleAlert} className="text-muted-foreground" />
-              </EmptyMedia>
-              <EmptyTitle>Couldn&apos;t load your accounts</EmptyTitle>
-              <EmptyDescription>
-                Check your connection and try again.
-              </EmptyDescription>
-            </EmptyHeader>
-            <EmptyContent>
-              <Button variant="outline" onPress={() => void items.refetch()}>
-                <Text>Try again</Text>
-              </Button>
-            </EmptyContent>
-          </Empty>
+          <LoadError
+            title="Couldn't load your accounts"
+            onRetry={() => void items.refetch()}
+          />
         }
       />
     );
@@ -69,19 +73,46 @@ export function Accounts() {
       <RefetchScroll
         refetch={items.refetch}
         isLoading={items.isPending}
-        loading={
-          <View className="flex-1 items-center justify-center">
-            <Spinner className="text-muted-foreground size-6" />
-          </View>
-        }
+        loading={<LoadingBlock />}
         isEmpty={items.data?.length === 0}
         empty={<AccountsEmpty />}
       >
+        {household.isShared ? (
+          <Section>
+            <SectionHeader>
+              <SectionTitle>Household</SectionTitle>
+            </SectionHeader>
+
+            <MemberList
+              onMemberPress={() => router.push("/household")}
+              onInvite={() => setInviteOpen(true)}
+            />
+          </Section>
+        ) : (
+          // The whole feature, behind one verb. Nothing about splitting exists
+          // on this screen until there is somebody to split with, so this row
+          // has to read as an offer rather than as a setting.
+          <Section>
+            <SectionContent>
+              <SectionItem
+                onPress={() => setInviteOpen(true)}
+                className="h-auto py-2.5"
+              >
+                <Icon as={UsersRound} className="text-foreground size-4" />
+                <Text className="font-medium">Split with someone</Text>
+                <SectionItemContent />
+              </SectionItem>
+            </SectionContent>
+          </Section>
+        )}
+
         {items.data?.map((item) => (
           <InstitutionSection
             key={item.id}
             item={item}
+            members={household.members}
             onDisconnect={setPendingDisconnect}
+            onEditAccount={setPendingAccount}
           />
         ))}
 
@@ -123,6 +154,19 @@ export function Accounts() {
         open={pendingDisconnect !== null}
         onOpenChange={(open) => {
           if (!open) setPendingDisconnect(null);
+        }}
+      />
+
+      <InviteSheet open={inviteOpen} onOpenChange={setInviteOpen} />
+
+      {/* Keyed on the account: every field in the sheet seeds from this prop,
+          and the remount is what reseeds them when another row is opened. */}
+      <AccountSplitSheet
+        key={pendingAccount?.id}
+        account={pendingAccount}
+        open={pendingAccount !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingAccount(null);
         }}
       />
     </>

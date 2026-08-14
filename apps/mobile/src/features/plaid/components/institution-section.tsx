@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/icon";
+import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import {
@@ -9,26 +10,38 @@ import {
   SectionItemContent,
   SectionTitle,
 } from "@/components/section";
+import type { Member } from "@/features/household/hooks/use-household";
 import { RefreshCw, Trash2 } from "lucide-react-native";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { usePlaidLink } from "../hooks/use-plaid-link";
 import {
   formatAccountBalance,
   formatAccountSubtitle,
+  type BankAccount,
   type PlaidItem,
 } from "../lib/format";
 import { ItemStatusBadge } from "./item-status-badge";
 
 export function InstitutionSection({
   item,
+  members,
   onDisconnect,
+  onEditAccount,
 }: {
   item: PlaidItem;
+  /**
+   * The household's seats. One of them means nobody to split with, and every
+   * ownership chip below disappears — a solo user gets the same rows as before
+   * any of this existed.
+   */
+  members: Member[];
   onDisconnect: (item: PlaidItem) => void;
+  onEditAccount: (account: BankAccount) => void;
 }) {
   // Same hook as the connect button; passing an itemId makes it update mode.
   const link = usePlaidLink();
   const needsReconnect = item.status === "login_required";
+  const isShared = members.length > 1;
 
   return (
     <Section>
@@ -40,6 +53,9 @@ export function InstitutionSection({
       <SectionContent>
         {item.accounts.map((account) => {
           const balance = formatAccountBalance(account);
+          const owner = members.find(
+            (member) => member.id === account.ownerMemberId,
+          );
 
           return (
             // h-auto because SectionItem hard-codes h-11 and these are two-line.
@@ -48,12 +64,34 @@ export function InstitutionSection({
                 <Text numberOfLines={1} className="font-medium">
                   {account.name}
                 </Text>
-                <Text
-                  numberOfLines={1}
-                  className="text-muted-foreground text-xs"
-                >
-                  {formatAccountSubtitle(account)}
-                </Text>
+
+                <View className="flex-row items-center gap-1.5">
+                  <Text
+                    numberOfLines={1}
+                    className="text-muted-foreground shrink text-xs"
+                  >
+                    {formatAccountSubtitle(account)}
+                  </Text>
+
+                  {/* Pushed to the end of the subtitle line rather than under
+                      the balance: a credit card already spends that column on
+                      its "Owed" caption. */}
+                  {isShared ? (
+                    <Pressable
+                      className="ml-auto shrink-0"
+                      hitSlop={8}
+                      accessibilityLabel={`Sharing settings for ${account.name}`}
+                      onPress={() => onEditAccount(account)}
+                    >
+                      <Badge variant="secondary" className="px-1.5 py-0">
+                        <Text className="text-[10px]">
+                          {owner?.displayName ?? "Former member"} ·{" "}
+                          {account.isPrivate ? "Private" : "Shared"}
+                        </Text>
+                      </Badge>
+                    </Pressable>
+                  ) : null}
+                </View>
               </View>
 
               {/* An element, not a string — a string makes SectionItemContent

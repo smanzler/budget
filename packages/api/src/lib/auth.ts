@@ -8,6 +8,7 @@ import { emailOTP } from "better-auth/plugins";
 import * as schema from "../db/auth-schema";
 import { createTransport } from "nodemailer";
 import { env } from "../env";
+import { ensureHousehold } from "./household";
 import { renderOtpEmail } from "./otp-email";
 
 const mailer = createTransport({
@@ -49,6 +50,27 @@ export const auth = betterAuth({
       },
     }),
   ],
+  databaseHooks: {
+    user: {
+      create: {
+        /**
+         * Give every new user a household immediately, so the very first
+         * request already has a member seat to act as.
+         *
+         * Deliberately non-fatal: a failure here must not block sign-up, and
+         * `householdProcedure` bootstraps lazily anyway. This hook exists so
+         * the common path does not pay for it on first request.
+         */
+        after: async (user) => {
+          try {
+            await ensureHousehold(user);
+          } catch (err) {
+            console.error("failed to bootstrap household on signup:", err);
+          }
+        },
+      },
+    },
+  },
   trustedOrigins: ["com.sigh10.budget://"],
   advanced: {
     database: {

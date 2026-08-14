@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { LoadError, LoadingBlock } from "@/components/query-state";
 import {
   Empty,
   EmptyContent,
@@ -8,11 +8,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Icon } from "@/components/ui/icon";
-import { Spinner } from "@/components/ui/spinner";
-import { Text } from "@/components/ui/text";
-import { Receipt, TriangleAlert } from "lucide-react-native";
+import { Receipt } from "lucide-react-native";
 import type { ReactNode } from "react";
-import { View } from "react-native";
 
 export type TransactionListState = "loading" | "error" | "empty";
 
@@ -26,35 +23,10 @@ export function TransactionListEmpty({
   action?: ReactNode;
   onRetry?: () => void;
 }) {
-  if (state === "loading") {
-    return (
-      <View className="flex-1 items-center justify-center">
-        <Spinner className="text-muted-foreground size-6" />
-      </View>
-    );
-  }
+  if (state === "loading") return <LoadingBlock />;
 
   if (state === "error") {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Icon as={TriangleAlert} className="text-muted-foreground" />
-          </EmptyMedia>
-          <EmptyTitle>Couldn&apos;t load transactions</EmptyTitle>
-          <EmptyDescription>
-            Check your connection and try again.
-          </EmptyDescription>
-        </EmptyHeader>
-        {onRetry ? (
-          <EmptyContent>
-            <Button variant="outline" onPress={onRetry}>
-              <Text>Try again</Text>
-            </Button>
-          </EmptyContent>
-        ) : null}
-      </Empty>
-    );
+    return <LoadError title="Couldn't load transactions" onRetry={onRetry} />;
   }
 
   return (

@@ -5,7 +5,13 @@ const testEnv: Record<keyof Env, string> = {
   BETTER_AUTH_SECRET: "test-secret",
   BETTER_AUTH_URL: "https://auth.test",
 
-  DATABASE_URL: "postgres://test:test@localhost:5432/test",
+  // Integration tests (`src/routes/scope.test.ts`, `src/lib/ledger.test.ts`)
+  // exercise procedures through the module-level `db` singleton, which reads
+  // this. Point it at a real database to run them; otherwise it stays a stub
+  // that nothing connects to and those suites skip themselves.
+  DATABASE_URL:
+    process.env.INTEGRATION_DATABASE_URL ??
+    "postgres://test:test@localhost:5432/test",
   PORT: "4000",
   CLIENT_ORIGIN: "http://localhost:3000",
 

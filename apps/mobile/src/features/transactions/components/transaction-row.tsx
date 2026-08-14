@@ -2,14 +2,17 @@ import { SectionItem } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Text } from "@/components/ui/text";
 import { cn } from "@/lib/utils";
+import { Link } from "expo-router";
 import { View } from "react-native";
 import {
   formatAccountLabel,
+  formatAttribution,
   formatCategory,
   formatTransactionAmount,
 } from "../lib/format";
 import type { Transaction } from "../lib/group";
 import { MerchantLogo } from "./merchant-logo";
+import { MemberStack } from "./member-stack";
 
 /**
  * A `SectionItem` with the card-edge flags passed explicitly.
@@ -40,45 +43,69 @@ export function TransactionRow({
     .filter(Boolean)
     .join(" · ");
 
+  // Null whenever the whole amount is yours, which is every row for a solo
+  // user and most rows for a shared household.
+  const attribution = formatAttribution(transaction);
+
   return (
-    // h-auto overrides SectionItem's h-11 — these rows are two lines tall.
-    <SectionItem isFirst={isFirst} isLast={isLast} className="h-auto py-2.5">
-      <MerchantLogo
-        logoUrl={transaction.logoUrl}
-        category={transaction.category}
-      />
+    <Link href={`/transaction/${transaction.id}`} asChild>
+      {/* h-auto overrides SectionItem's h-11 — these rows are two lines tall. */}
+      <SectionItem isFirst={isFirst} isLast={isLast} className="h-auto py-2.5">
+        <MerchantLogo
+          logoUrl={transaction.logoUrl}
+          category={transaction.category}
+        />
 
-      <View className="min-w-0 flex-1 gap-0.5">
-        <Text numberOfLines={1} className="font-medium">
-          {transaction.merchantName ?? transaction.name}
-        </Text>
-
-        <View className="flex-row items-center gap-1.5">
-          <Text
-            numberOfLines={1}
-            className="text-muted-foreground shrink text-xs"
-          >
-            {subtitle}
+        <View className="min-w-0 flex-1 gap-0.5">
+          <Text numberOfLines={1} className="font-medium">
+            {transaction.merchantName ?? transaction.name}
           </Text>
-          {transaction.pending ? (
-            <Badge variant="secondary" className="px-1.5 py-0">
-              <Text className="text-[10px]">Pending</Text>
-            </Badge>
+
+          <View className="flex-row items-center gap-1.5">
+            <Text
+              numberOfLines={1}
+              className="text-muted-foreground shrink text-xs"
+            >
+              {subtitle}
+            </Text>
+            {transaction.pending ? (
+              <Badge variant="secondary" className="px-1.5 py-0">
+                <Text className="text-[10px]">Pending</Text>
+              </Badge>
+            ) : null}
+            {transaction.splitsStale ? (
+              <Badge variant="secondary" className="px-1.5 py-0">
+                <Text className="text-[10px]">Review split</Text>
+              </Badge>
+            ) : null}
+            {attribution ? (
+              <MemberStack
+                members={attribution.participants}
+                className="ml-auto"
+              />
+            ) : null}
+          </View>
+        </View>
+
+        <View className="items-end">
+          {/* The primary figure stays the FULL transaction amount — this is a
+              bank ledger and it has to match the bank. Your share is secondary. */}
+          <Text
+            className={cn(
+              "font-medium tabular-nums",
+              isInflow && "text-success",
+              transaction.pending && "opacity-60",
+            )}
+          >
+            {text}
+          </Text>
+          {attribution ? (
+            <Text className="text-muted-foreground text-[11px] tabular-nums">
+              {attribution.yourShareText}
+            </Text>
           ) : null}
         </View>
-      </View>
-
-      {/* Only inflows get color — tinting every purchase red is noise in a
-          ledger that is almost entirely debits. */}
-      <Text
-        className={cn(
-          "font-medium tabular-nums",
-          isInflow && "text-success",
-          transaction.pending && "opacity-60",
-        )}
-      >
-        {text}
-      </Text>
-    </SectionItem>
+      </SectionItem>
+    </Link>
   );
 }

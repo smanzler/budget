@@ -1,4 +1,5 @@
 import { formatCurrency } from "@/lib/utils";
+import { fromCents } from "@budget/shared";
 
 export type FormattedAmount = {
   text: string;
@@ -31,6 +32,61 @@ export const formatTransactionAmount = (
     text: `${isInflow ? "+" : ""}${formatCurrency(Math.abs(value), currency)}`,
     isInflow,
   };
+};
+
+export type Attribution = {
+  /** Your slice, already formatted — `you $25.00`. */
+  yourShareText: string;
+  /** Everyone on the split, you first, for the avatar stack. */
+  participants: { id: string; displayName: string; isYou: boolean }[];
+};
+
+/**
+ * How a transaction's split renders on a row, or `null` when there is nothing
+ * to say.
+ *
+ * Returning `null` for a split that is entirely yours is what keeps a
+ * single-member household — and every unshared purchase in a shared one —
+ * looking exactly as it did before this feature existed. The server already
+ * withholds attribution for solo households; this is the same rule applied to
+ * the individual row.
+ */
+export const formatAttribution = (transaction: {
+  yourShare: number | null;
+  participants: { id: string; displayName: string; isYou: boolean }[];
+  isoCurrencyCode?: string | null;
+}): Attribution | null => {
+  if (transaction.participants.length <= 1) return null;
+  if (transaction.yourShare === null) return null;
+
+  const { text } = formatTransactionAmount(
+    // `fromCents` rather than a float divide: the shared money module exists so
+    // one rounding implementation serves the client and the server, and a share
+    // is exactly the number that must not disagree with the ledger.
+    fromCents(transaction.yourShare),
+    transaction.isoCurrencyCode,
+  );
+
+  return {
+    yourShareText: `you ${text}`,
+    participants: [...transaction.participants].sort(
+      (a, b) => Number(b.isYou) - Number(a.isYou),
+    ),
+  };
+};
+
+/** `SM` — the two-letter stand-in when a member has no avatar image. */
+export const memberInitials = (displayName: string): string => {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+
+  // `charAt` returns "" rather than undefined past the end, so a one-word,
+  // one-letter name simply yields a single initial.
+  const [first, second] = parts;
+
+  return (
+    first!.charAt(0) + (second?.charAt(0) ?? first!.charAt(1))
+  ).toUpperCase();
 };
 
 /** `Chase Sapphire •••• 4242` — the subtitle for an account row. */

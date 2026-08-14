@@ -1,15 +1,21 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { CountryCode, Products } from "plaid";
 import { z } from "zod";
 import db from "../../db";
-import { PlaidItems } from "../../db/schema";
+import {
+  BankAccounts,
+  LedgerEntries,
+  PlaidItems,
+  Transactions,
+} from "../../db/schema";
 import { encrypt, decrypt } from "../../lib/crypto";
 import { env } from "../../env";
 import { plaid } from "../../lib/plaid";
 import { enqueuePlaidSync } from "../../lib/plaid-queue";
 import { syncItemAccounts, syncItemTransactions } from "../../lib/plaid-sync";
-import { protectedProcedure, router } from "../../lib/trpc";
+import { toIso } from "../../lib/serialize";
+import { householdProcedure, router } from "../../lib/trpc";
 
 const CLIENT_NAME = "Budget";
 const COUNTRY_CODES = [CountryCode.Us];
@@ -19,12 +25,9 @@ const DAYS_REQUESTED = 730;
 /** A sync that outruns this keeps going in the background; we just stop waiting. */
 const SYNC_NOW_TIMEOUT_MS = 20_000;
 
-/** The mobile client has no transformer, so a `Date` would lie about its type. */
-const toIso = (value: Date | null) => value?.toISOString() ?? null;
-
-const ownedItem = async (itemId: string, userId: string) => {
+const householdItem = async (itemId: string, householdId: string) => {
   const item = await db.query.PlaidItems.findFirst({
-    where: { id: itemId, userId },
+    where: { id: itemId, householdId },
   });
 
   if (!item)
@@ -33,13 +36,20 @@ const ownedItem = async (itemId: string, userId: string) => {
   return item;
 };
 
+/** The rows one item is responsible for, always scoped to the household too. */
+const underItem = (householdId: string, plaidItemId: string) =>
+  and(
+    eq(Transactions.householdId, householdId),
+    eq(BankAccounts.plaidItemId, plaidItemId),
+  );
+
 export const plaidRouter = router({
   /**
    * Mints the short-lived token that Plaid Link opens with. Passing an
    * `itemId` produces an update-mode token — the reconnect path for an item
    * whose credentials expired.
    */
-  createLinkToken: protectedProcedure
+  createLinkToken: householdProcedure
     .input(
       z.object({
         itemId: z.uuid().optional(),
@@ -50,10 +60,21 @@ export const plaidRouter = router({
       }),
     )
     .mutation(async (opts) => {
-      const { user } = opts.ctx;
+      const { user, householdId } = opts.ctx;
       const { itemId } = opts.input;
 
-      const updateFor = itemId ? await ownedItem(itemId, user.id) : null;
+      const updateFor = itemId
+        ? await householdItem(itemId, householdId)
+        : null;
+
+      // Disconnecting nulls the credential, and update mode has nothing to
+      // re-authenticate without one. The way back is a fresh Link, not this.
+      if (updateFor && !updateFor.accessToken) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "This bank was disconnected — connect it again",
+        });
+      }
 
       const { data } = await plaid.linkTokenCreate({
         client_name: CLIENT_NAME,
@@ -61,7 +82,7 @@ export const plaidRouter = router({
         country_codes: COUNTRY_CODES,
         user: { client_user_id: user.id },
         ...(env.PLAID_WEBHOOK_URL ? { webhook: env.PLAID_WEBHOOK_URL } : {}),
-        ...(updateFor
+        ...(updateFor?.accessToken
           ? // Update mode: no `products`, Plaid re-authenticates the existing item.
             { access_token: decrypt(updateFor.accessToken) }
           : {
@@ -78,10 +99,10 @@ export const plaidRouter = router({
    * The access token is encrypted before it touches the database and is never
    * returned to the client.
    */
-  exchangePublicToken: protectedProcedure
+  exchangePublicToken: householdProcedure
     .input(z.object({ publicToken: z.string() }))
     .mutation(async (opts) => {
-      const { user } = opts.ctx;
+      const { user, member, householdId } = opts.ctx;
 
       const { data: exchange } = await plaid.itemPublicTokenExchange({
         public_token: opts.input.publicToken,
@@ -93,7 +114,11 @@ export const plaidRouter = router({
       const [item] = await db
         .insert(PlaidItems)
         .values({
+          householdId,
           userId: user.id,
+          // The seat that gets paid back for everything on these accounts. The
+          // linking member, not the household owner.
+          ownerMemberId: member.id,
           plaidItemId: exchange.item_id,
           accessToken,
           status: "syncing",
@@ -101,36 +126,50 @@ export const plaidRouter = router({
         })
         .onConflictDoUpdate({
           target: PlaidItems.plaidItemId,
+          // `ownerMemberId` is deliberately absent: re-exchanging an item must
+          // never silently reassign who is owed for its transactions.
           set: {
             accessToken,
             status: "syncing",
+            disconnectedAt: null,
             ...institution,
           },
-          // Scoped to the owner so re-exchanging cannot transfer an item — a
-          // double-tap updates your own row and nothing else.
-          setWhere: eq(PlaidItems.userId, user.id),
+          // Scoped to the household so re-exchanging cannot move an item
+          // between households — a double-tap updates your own row or nothing.
+          setWhere: eq(PlaidItems.householdId, householdId),
         })
-        .returning({ id: PlaidItems.id });
+        .returning({
+          id: PlaidItems.id,
+          institutionId: PlaidItems.institutionId,
+        });
 
       if (!item) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: "This bank connection belongs to another account",
+          message: "This bank connection belongs to another household",
         });
       }
 
       // Accounts first — transactions reference them.
-      await syncItemAccounts(item.id);
+      const accounts = await syncItemAccounts(item.id);
       await enqueuePlaidSync(item.id);
 
-      return { itemId: item.id };
+      return {
+        itemId: item.id,
+        duplicateOf: await findDuplicateAccount({
+          householdId,
+          plaidItemId: item.id,
+          institutionId: item.institutionId,
+          accounts,
+        }),
+      };
     }),
 
   items: router({
     /** Items with their accounts nested, so the screen is one query. */
-    list: protectedProcedure.query(async (opts) => {
+    list: householdProcedure.query(async (opts) => {
       const items = await db.query.PlaidItems.findMany({
-        where: { userId: opts.ctx.user.id },
+        where: { householdId: opts.ctx.householdId },
         // Explicit columns — `accessToken` must never reach the client.
         columns: {
           id: true,
@@ -138,6 +177,7 @@ export const plaidRouter = router({
           institutionLogoUrl: true,
           status: true,
           lastSyncedAt: true,
+          disconnectedAt: true,
         },
         with: {
           accounts: {
@@ -151,7 +191,16 @@ export const plaidRouter = router({
               currentBalance: true,
               availableBalance: true,
               isoCurrencyCode: true,
+              ownerMemberId: true,
+              isPrivate: true,
+              defaultSplit: true,
+              defaultSplitFrom: true,
+              excludedAt: true,
             },
+            // Without this Postgres is free to return the accounts in a
+            // different order each call, and the settings list reshuffles under
+            // the user between refetches.
+            orderBy: { createdAt: "asc" },
           },
         },
         orderBy: { createdAt: "asc" },
@@ -160,31 +209,234 @@ export const plaidRouter = router({
       return items.map((item) => ({
         ...item,
         lastSyncedAt: toIso(item.lastSyncedAt),
+        disconnectedAt: toIso(item.disconnectedAt),
+        accounts: item.accounts.map((account) => {
+          const yours = account.ownerMemberId === opts.ctx.member.id;
+
+          return {
+            ...account,
+            excludedAt: toIso(account.excludedAt),
+            // A private account still appears in the list — the household can
+            // see that it exists and who owns it — but its balances are
+            // withheld. `transactions.list` already hides its rows, and the
+            // live balance is the more sensitive of the two.
+            currentBalance:
+              account.isPrivate && !yours ? null : account.currentBalance,
+            availableBalance:
+              account.isPrivate && !yours ? null : account.availableBalance,
+          };
+        }),
       }));
     }),
 
-    /** Revokes at Plaid first, then deletes — cascading accounts and transactions. */
-    remove: protectedProcedure
+    /** What a purge would actually cost, so the dialog can name it up front. */
+    impact: householdProcedure
+      .input(z.object({ itemId: z.uuid() }))
+      .query(async (opts) => {
+        const { householdId } = opts.ctx;
+        const item = await householdItem(opts.input.itemId, householdId);
+
+        // Both walk the item's whole history, and neither depends on the other.
+        const [[counted], outstanding] = await Promise.all([
+          db
+            .select({ transactions: sql<string>`count(*)` })
+            .from(Transactions)
+            .innerJoin(
+              BankAccounts,
+              eq(BankAccounts.id, Transactions.bankAccountId),
+            )
+            .where(underItem(householdId, item.id)),
+          db
+            .select({
+              currency: LedgerEntries.isoCurrencyCode,
+              cents: sql<string>`sum(${LedgerEntries.amountCents})`,
+            })
+            .from(LedgerEntries)
+            .innerJoin(
+              Transactions,
+              eq(Transactions.id, LedgerEntries.transactionId),
+            )
+            .innerJoin(
+              BankAccounts,
+              eq(BankAccounts.id, Transactions.bankAccountId),
+            )
+            .where(
+              and(
+                eq(LedgerEntries.householdId, householdId),
+                underItem(householdId, item.id),
+              ),
+            )
+            .groupBy(LedgerEntries.isoCurrencyCode)
+            .orderBy(LedgerEntries.isoCurrencyCode),
+        ]);
+
+        return {
+          // `count` and `sum` cross node-postgres as strings — a bigint does not
+          // fit a JS number in the general case, so pg refuses to guess.
+          transactions: Number(counted?.transactions ?? 0),
+          outstanding: outstanding
+            .map((row) => ({
+              cents: Number(row.cents),
+              currency: row.currency,
+            }))
+            // Gross debt raised by this item's rows, not a net balance:
+            // settlements belong to a pair, not to an item. A run that fully
+            // refunded itself nets to zero and is not damage worth naming.
+            .filter((row) => row.cents !== 0),
+        };
+      }),
+
+    /**
+     * Soft disconnect: revoke at Plaid, drop the credential, keep the row.
+     *
+     * Deleting the item cascades its accounts and every transaction under them,
+     * and once money is owed that silently erases a real debt — the roommate
+     * still owes $340 for a phone bill nobody can see any more. `items.purge`
+     * is the deliberate, confirmed path for actually destroying data.
+     */
+    remove: householdProcedure
       .input(z.object({ itemId: z.uuid() }))
       .mutation(async (opts) => {
-        const { user } = opts.ctx;
-        const item = await ownedItem(opts.input.itemId, user.id);
+        const { user, householdId } = opts.ctx;
+        const item = await householdItem(opts.input.itemId, householdId);
 
-        try {
-          await plaid.itemRemove({ access_token: decrypt(item.accessToken) });
-        } catch (err) {
-          // Already gone at Plaid (or unrecoverable) — still drop our copy,
-          // otherwise the user is stuck with a row they cannot delete.
-          console.error("plaid.itemRemove failed:", err);
+        // Refused *before* the revoke, not only by the UPDATE below. Everyone in
+        // the household can name this item, `itemRemove` is irreversible, and
+        // failing the check afterwards would leave the connection dead at Plaid
+        // while our row still reads `active` with a live-looking credential —
+        // every later sync fails and the UI shows nothing wrong.
+        if (item.userId !== user.id) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Only the member who connected this bank can disconnect it",
+          });
         }
 
-        await db
-          .delete(PlaidItems)
+        if (item.accessToken) {
+          try {
+            await plaid.itemRemove({ access_token: decrypt(item.accessToken) });
+          } catch (err) {
+            // Already gone at Plaid (or unrecoverable) — still drop our copy of
+            // the credential, otherwise the user is stuck with a connection
+            // they cannot disconnect.
+            console.error("plaid.itemRemove failed:", err);
+          }
+        }
+
+        // `user_id` on top of the household scope: everyone shares the data, but
+        // revoking a credential is the act of the member who supplied it. The
+        // check above reads the row; this one is the check that actually gates
+        // the write.
+        const [disconnected] = await db
+          .update(PlaidItems)
+          .set({
+            status: "disconnected",
+            accessToken: null,
+            cursor: null,
+            disconnectedAt: new Date(),
+          })
           .where(
-            and(eq(PlaidItems.id, item.id), eq(PlaidItems.userId, user.id)),
-          );
+            and(
+              eq(PlaidItems.id, item.id),
+              eq(PlaidItems.householdId, householdId),
+              eq(PlaidItems.userId, user.id),
+            ),
+          )
+          .returning({ id: PlaidItems.id });
+
+        if (!disconnected) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Only the member who connected this bank can disconnect it",
+          });
+        }
 
         return { itemId: item.id };
+      }),
+
+    /**
+     * The destructive path: the item, its accounts and every transaction under
+     * them, gone. `confirm` is required because none of it comes back.
+     */
+    purge: householdProcedure
+      .input(z.object({ itemId: z.uuid(), confirm: z.literal(true) }))
+      .mutation(async (opts) => {
+        const { user, householdId } = opts.ctx;
+        const item = await householdItem(opts.input.itemId, householdId);
+
+        // The same gate as `remove`, and for a stronger reason: this one is
+        // irreversible and destroys history the whole household can see. Anyone
+        // being able to purge a connection they did not contribute would let one
+        // member delete another's bank data outright.
+        if (item.userId !== user.id) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only the member who connected this bank can delete it",
+          });
+        }
+
+        if (item.accessToken) {
+          try {
+            await plaid.itemRemove({ access_token: decrypt(item.accessToken) });
+          } catch (err) {
+            // Purging a still-connected item must not leave the credential live
+            // at Plaid with nothing left in our database pointing at it.
+            console.error("plaid.itemRemove failed:", err);
+          }
+        }
+
+        const deletedTransactions = await db.transaction(async (tx) => {
+          const [counted] = await tx
+            .select({ transactions: sql<string>`count(*)` })
+            .from(Transactions)
+            .innerJoin(
+              BankAccounts,
+              eq(BankAccounts.id, Transactions.bankAccountId),
+            )
+            .where(underItem(householdId, item.id));
+
+          // Deleting your data must not delete what you owe. `transaction_id` is
+          // a convenience join, not the entry — the amount, memo and date were
+          // frozen onto the row at post time, so the debt survives detached and
+          // still reads as "Luigi's — Aug 3 — $50". The FK is ON DELETE SET
+          // NULL, so this is belt-and-braces; it runs in the same transaction as
+          // the delete so the two can never disagree.
+          await tx
+            .update(LedgerEntries)
+            .set({ transactionId: null })
+            .where(
+              and(
+                eq(LedgerEntries.householdId, householdId),
+                inArray(
+                  LedgerEntries.transactionId,
+                  tx
+                    .select({ id: Transactions.id })
+                    .from(Transactions)
+                    .innerJoin(
+                      BankAccounts,
+                      eq(BankAccounts.id, Transactions.bankAccountId),
+                    )
+                    .where(underItem(householdId, item.id)),
+                ),
+              ),
+            );
+
+          await tx
+            .delete(PlaidItems)
+            .where(
+              and(
+                eq(PlaidItems.id, item.id),
+                eq(PlaidItems.householdId, householdId),
+                eq(PlaidItems.userId, user.id),
+              ),
+            );
+
+          return Number(counted?.transactions ?? 0);
+        });
+
+        return { itemId: item.id, deletedTransactions };
       }),
   }),
 
@@ -192,18 +444,21 @@ export const plaidRouter = router({
    * Awaited on purpose: this backs pull-to-refresh, and a fire-and-forget
    * enqueue would resolve instantly and show the user unchanged data.
    */
-  syncNow: protectedProcedure
+  syncNow: householdProcedure
     .input(z.object({ itemId: z.uuid().optional() }).optional())
     .mutation(async (opts) => {
-      const { user } = opts.ctx;
+      const { householdId } = opts.ctx;
       const itemId = opts.input?.itemId;
 
-      const items = itemId
-        ? [await ownedItem(itemId, user.id)]
+      const items: { id: string; status: string }[] = itemId
+        ? [await householdItem(itemId, householdId)]
         : await db.query.PlaidItems.findMany({
-            where: { userId: user.id },
-            columns: { id: true },
+            where: { householdId },
+            columns: { id: true, status: true },
           });
+
+      // A disconnected item has no credential left to sync with.
+      const syncable = items.filter((item) => item.status !== "disconnected");
 
       const totals = { added: 0, modified: 0, removed: 0 };
       let failure: unknown;
@@ -211,7 +466,7 @@ export const plaidRouter = router({
       // The catch is attached eagerly: if a sync fails *after* the timeout has
       // already won the race, an unattached rejection would crash the process.
       const work = Promise.all(
-        items.map(async (item) => {
+        syncable.map(async (item) => {
           const result = await syncItemTransactions(item.id);
           totals.added += result.added;
           totals.modified += result.modified;
@@ -273,4 +528,71 @@ const fetchInstitution = async (accessToken: string) => {
     console.error("Failed to fetch institution metadata:", err);
     return {};
   }
+};
+
+/**
+ * An account in this household that the freshly linked one appears to duplicate.
+ *
+ * Two members each linking the same joint account is the single most likely way
+ * a shared household double-counts everything: the same charge arrives under two
+ * items, gets split twice, and every balance is silently wrong. Plaid account
+ * ids are per-Item, so the only comparable identity is
+ * (institution, mask, type, subtype).
+ *
+ * Advisory only — the client warns, the user decides. Blocking the connect would
+ * be wrong: two people really can hold separate accounts with the same last four
+ * at the same bank.
+ */
+const findDuplicateAccount = async (args: {
+  householdId: string;
+  plaidItemId: string;
+  institutionId: string | null;
+  accounts: {
+    mask: string | null;
+    type: string | null;
+    subtype: string | null;
+  }[];
+}) => {
+  const { householdId, plaidItemId, institutionId, accounts } = args;
+
+  // Without an institution to anchor it, "a checking account ending 4242" is a
+  // coincidence rather than a duplicate.
+  if (!institutionId) return null;
+
+  const matches = accounts.flatMap((account) =>
+    account.mask
+      ? [
+          and(
+            eq(BankAccounts.mask, account.mask),
+            // `is not distinct from`, because type and subtype are nullable and
+            // `= null` matches nothing.
+            sql`${BankAccounts.type} is not distinct from ${account.type}::text`,
+            sql`${BankAccounts.subtype} is not distinct from ${account.subtype}::text`,
+          ),
+        ]
+      : [],
+  );
+
+  if (matches.length === 0) return null;
+
+  const [duplicate] = await db
+    .select({ id: BankAccounts.id })
+    .from(BankAccounts)
+    .innerJoin(PlaidItems, eq(PlaidItems.id, BankAccounts.plaidItemId))
+    .where(
+      and(
+        eq(BankAccounts.householdId, householdId),
+        ne(BankAccounts.plaidItemId, plaidItemId),
+        eq(PlaidItems.institutionId, institutionId),
+        // An already-muted duplicate is not what the new one would double up
+        // with; point the warning at the account still producing rows.
+        isNull(BankAccounts.excludedAt),
+        or(...matches),
+      ),
+    )
+    // Oldest match, so the warning names the original connection.
+    .orderBy(BankAccounts.createdAt)
+    .limit(1);
+
+  return duplicate?.id ?? null;
 };

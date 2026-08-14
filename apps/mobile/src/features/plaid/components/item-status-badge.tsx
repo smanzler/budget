@@ -12,6 +12,9 @@ const LABELS: Record<
   active: { text: "Connected", variant: "secondary" },
   login_required: { text: "Reconnect needed", variant: "destructive" },
   error: { text: "Error", variant: "destructive" },
+  // Not destructive: disconnecting is something the user chose, and the
+  // history and balances it produced are all still there.
+  disconnected: { text: "Disconnected", variant: "secondary" },
 };
 
 export function ItemStatusBadge({ status }: { status: Status }) {
