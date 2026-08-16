@@ -68,15 +68,10 @@ export function InviteSheet({
 
   const handleEmailChange = (next: string) => {
     setEmail(next);
-    // Re-validating on every keystroke would call every half-typed address
-    // wrong; the refusal is raised on submit and retracted the moment the
-    // person starts fixing it.
     setEmailError(null);
   };
 
   const handleInvite = async () => {
-    // The procedure's own rule, not a second copy of it: a form that disagrees
-    // with the router is a round trip spent to be told the same thing.
     const parsed = inviteInputSchema.shape.email.safeParse(email.trim());
 
     if (!parsed.success) {
@@ -152,8 +147,6 @@ export function InviteSheet({
                 <Input
                   autoCapitalize="words"
                   autoComplete="name"
-                  // The server's own limit. Without it the only refusal this
-                  // form can produce for a long name is the email one below.
                   value={displayName}
                   onChangeText={setDisplayName}
                 />
