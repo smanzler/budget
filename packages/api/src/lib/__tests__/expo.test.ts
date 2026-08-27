@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildPushMessage, getTicketOutcome } from "./expo";
+import { buildPushMessage, getTicketOutcome } from "../expo";
 
 const VALID_TOKEN = "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]";
 

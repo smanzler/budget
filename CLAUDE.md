@@ -12,6 +12,9 @@ Never start a dev server (`pnpm dev`, `expo start`, `vite dev`/`preview`, `next 
 
 Add tests when it makes sense and they provide real value — not for the sake of coverage. Don't add tests for trivial code or scenarios that can't happen.
 
+Put test files in a `__tests__` directory beside the code under test, named
+`<module>.test.ts` — not colocated next to the module.
+
 ## Database migrations
 
 Never run database migrations yourself. If a schema change requires a migration, tell the user and let them run it manually.
