@@ -1,12 +1,12 @@
 import { cn } from "@/lib/utils";
-import { Platform, TextInput, type TextInputProps } from "react-native";
+import { Platform, TextInput } from "react-native";
 
 function Textarea({
   className,
   multiline = true,
   numberOfLines = Platform.select({ web: 2, native: 8 }), // On web, numberOfLines also determines initial height. On native, it determines the maximum height.
   ...props
-}: TextInputProps & React.RefAttributes<TextInput>) {
+}: React.ComponentProps<typeof TextInput> & React.RefAttributes<TextInput>) {
   return (
     <TextInput
       className={cn(
@@ -17,6 +17,8 @@ function Textarea({
         props.editable === false && "opacity-50",
         className,
       )}
+      // LOCAL: the registry version also sets `placeholderClassName`, which the
+      // pinned uniwind version doesn't add to TextInput's props.
       multiline={multiline}
       numberOfLines={numberOfLines}
       textAlignVertical="top"

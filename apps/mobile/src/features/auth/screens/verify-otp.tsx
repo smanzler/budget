@@ -6,7 +6,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, View } from "react-native";
 import { AuthCard } from "../components/auth-card";
-import { OtpInput, type OtpInputRef } from "@/components/ui/otp-input";
+import { OtpInput, type OtpInputRef } from "@/components/otp-input";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 

@@ -6,7 +6,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { OtpInput } from "@/components/ui/otp-input";
+import { OtpInput } from "@/components/otp-input";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { useTRPC } from "@/lib/trpc";

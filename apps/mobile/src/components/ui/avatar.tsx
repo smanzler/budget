@@ -1,16 +1,17 @@
 import { cn } from "@/lib/utils";
 import * as AvatarPrimitive from "@rn-primitives/avatar";
 import { Image } from "expo-image";
-import { Icon } from "./icon";
 import { User } from "lucide-react-native";
 import { withUniwind } from "uniwind";
+import { Icon } from "./icon";
 
+// LOCAL: images render through expo-image for disk caching and a fade-in.
 const StyledImage = withUniwind(Image);
 
 function Avatar({
   className,
   ...props
-}: AvatarPrimitive.RootProps & React.RefAttributes<AvatarPrimitive.RootRef>) {
+}: React.ComponentProps<typeof AvatarPrimitive.Root>) {
   return (
     <AvatarPrimitive.Root
       className={cn(
@@ -25,7 +26,7 @@ function Avatar({
 function AvatarImage({
   className,
   ...props
-}: AvatarPrimitive.ImageProps & React.RefAttributes<AvatarPrimitive.ImageRef>) {
+}: React.ComponentProps<typeof AvatarPrimitive.Image>) {
   return (
     <AvatarPrimitive.Image asChild {...props}>
       <StyledImage
@@ -41,8 +42,7 @@ function AvatarFallback({
   className,
   children,
   ...props
-}: AvatarPrimitive.FallbackProps &
-  React.RefAttributes<AvatarPrimitive.FallbackRef>) {
+}: React.ComponentProps<typeof AvatarPrimitive.Fallback>) {
   return (
     <AvatarPrimitive.Fallback
       className={cn(
@@ -51,11 +51,8 @@ function AvatarFallback({
       )}
       {...props}
     >
-      {children ? (
-        children
-      ) : (
-        <Icon as={User} className="text-muted-foreground" />
-      )}
+      {/* LOCAL: a person icon when no initials are supplied. */}
+      {children ?? <Icon as={User} className="text-muted-foreground" />}
     </AvatarPrimitive.Fallback>
   );
 }

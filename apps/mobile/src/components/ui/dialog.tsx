@@ -4,8 +4,14 @@ import { cn } from "@/lib/utils";
 import * as DialogPrimitive from "@rn-primitives/dialog";
 import { X } from "lucide-react-native";
 import * as React from "react";
-import { Platform, Text, View, type ViewProps } from "react-native";
-import { FadeIn, FadeOut } from "react-native-reanimated";
+import {
+  Platform,
+  Text,
+  View,
+  type GestureResponderEvent,
+  type ViewProps,
+} from "react-native";
+import { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 
 const Dialog = DialogPrimitive.Root;
@@ -22,11 +28,20 @@ const FullWindowOverlay =
 function DialogOverlay({
   className,
   children,
+  onPress,
   ...props
-}: Omit<DialogPrimitive.OverlayProps, "asChild"> &
-  React.RefAttributes<DialogPrimitive.OverlayRef> & {
-    children?: React.ReactNode;
-  }) {
+}: Omit<React.ComponentProps<typeof DialogPrimitive.Overlay>, "asChild"> & {
+  children?: React.ReactNode;
+}) {
+  const { onOpenChange } = DialogPrimitive.useRootContext();
+
+  function onOverlayPress(event: GestureResponderEvent) {
+    onPress?.(event);
+    if (event.target === event.currentTarget && !event.isDefaultPrevented()) {
+      onOpenChange(false);
+    }
+  }
+
   return (
     <FullWindowOverlay>
       <DialogPrimitive.Overlay
@@ -38,15 +53,17 @@ function DialogOverlay({
           className,
         )}
         {...props}
+        onPress={Platform.select({ web: onOverlayPress, native: onPress })}
         asChild={Platform.OS !== "web"}
       >
         <NativeOnlyAnimatedView
-          entering={FadeIn.duration(200)}
-          exiting={FadeOut.duration(150)}
+          entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
+          exiting={FadeOut.duration(150).reduceMotion(ReduceMotion.System)}
+          as="Pressable"
         >
           <NativeOnlyAnimatedView
-            entering={FadeIn.delay(50)}
-            exiting={FadeOut.duration(150)}
+            entering={FadeIn.delay(50).reduceMotion(ReduceMotion.System)}
+            exiting={FadeOut.duration(150).reduceMotion(ReduceMotion.System)}
           >
             <>{children}</>
           </NativeOnlyAnimatedView>
@@ -60,10 +77,9 @@ function DialogContent({
   portalHost,
   children,
   ...props
-}: DialogPrimitive.ContentProps &
-  React.RefAttributes<DialogPrimitive.ContentRef> & {
-    portalHost?: string;
-  }) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  portalHost?: string;
+}) {
   return (
     <DialogPortal hostName={portalHost}>
       <DialogOverlay>
@@ -125,7 +141,7 @@ function DialogFooter({ className, ...props }: ViewProps) {
 function DialogTitle({
   className,
   ...props
-}: DialogPrimitive.TitleProps & React.RefAttributes<DialogPrimitive.TitleRef>) {
+}: React.ComponentProps<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title
       className={cn(
@@ -140,8 +156,7 @@ function DialogTitle({
 function DialogDescription({
   className,
   ...props
-}: DialogPrimitive.DescriptionProps &
-  React.RefAttributes<DialogPrimitive.DescriptionRef>) {
+}: React.ComponentProps<typeof DialogPrimitive.Description>) {
   return (
     <DialogPrimitive.Description
       className={cn("text-muted-foreground text-sm", className)}
