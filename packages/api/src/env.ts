@@ -6,8 +6,8 @@ export const envSchema = z.object({
   BETTER_AUTH_URL: z.string(),
 
   DATABASE_URL: z.string(),
-  PORT: z.coerce.number().default(4000),
-  CLIENT_ORIGIN: z.string().default("http://localhost:3000"),
+  PORT: z.coerce.number().default(24000),
+  CLIENT_ORIGIN: z.string().default("http://localhost:23000"),
 
   BUCKET_REGION: z.string(),
   BUCKET_ACCESS_KEY_ID: z.string(),
@@ -16,7 +16,7 @@ export const envSchema = z.object({
   BUCKET_URL: z.string(),
 
   SMTP_HOST: z.string().default("localhost"),
-  SMTP_PORT: z.coerce.number().default(1025),
+  SMTP_PORT: z.coerce.number().default(21025),
   SMTP_SECURE: z.coerce.boolean().default(false),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),

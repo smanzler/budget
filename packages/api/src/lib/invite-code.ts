@@ -1,4 +1,5 @@
 import { randomInt } from "node:crypto";
+import { INVITE_CODE_LENGTH } from "@budget/shared";
 
 /**
  * Invite codes get read aloud, retyped and pasted with stray spacing, so they
@@ -6,8 +7,6 @@ import { randomInt } from "node:crypto";
  * way in so "o" and "0" (or "l" and "1") resolve to the same code.
  */
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-
-export const INVITE_CODE_LENGTH = 6;
 
 export const INVITE_TTL_DAYS = 14;
 

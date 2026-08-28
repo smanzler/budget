@@ -11,6 +11,11 @@ primary_region = 'ord'
 [build]
   dockerfile = './Dockerfile'
 
+[env]
+  # Must agree with `internal_port` below and `EXPOSE` in the Dockerfile.
+  # The local default in src/env.ts is a development port — do not use it here.
+  PORT = '8080'
+
 [http_service]
   internal_port = 8080
   force_https = true

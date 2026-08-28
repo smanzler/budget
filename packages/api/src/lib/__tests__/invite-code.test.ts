@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
+import { INVITE_CODE_LENGTH } from "@budget/shared";
 import {
   generateInviteCode,
-  INVITE_CODE_LENGTH,
   INVITE_TTL_DAYS,
   inviteExpiryFrom,
   isInviteUsable,
