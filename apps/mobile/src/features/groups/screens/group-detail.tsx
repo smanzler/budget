@@ -22,10 +22,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
 import { useTRPC } from "@/lib/trpc";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { TriangleAlert } from "lucide-react-native";
 import { View } from "react-native";
+import { ExpenseList } from "@/features/expenses/components/expense-list";
 import { InviteButton } from "../components/invite-button";
 import { LeaveGroupDialog } from "../components/leave-group-dialog";
 import { RenameGroupDialog } from "../components/rename-group-dialog";
@@ -42,6 +43,7 @@ function initialsOf(name: string) {
 export function GroupDetail() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
 
   const {
@@ -51,12 +53,21 @@ export function GroupDetail() {
     refetch,
   } = useQuery(trpc.groups.get.queryOptions({ groupId }));
 
+  // The expense list has its own query. Refresh it with the group.
+  const refresh = () =>
+    Promise.all([
+      refetch(),
+      queryClient.invalidateQueries({
+        queryKey: trpc.expenses.list.queryKey({ groupId }),
+      }),
+    ]);
+
   return (
     <>
       <Stack.Screen options={{ title: group?.name ?? "Group" }} />
 
       <RefetchScroll
-        refetch={refetch}
+        refetch={refresh}
         isLoading={isLoading}
         loading={
           <View className="flex-1 items-center justify-center">
@@ -78,6 +89,8 @@ export function GroupDetail() {
       >
         {group && (
           <>
+            <ExpenseList groupId={group.id} currency={group.currency} />
+
             <Section>
               <SectionTitle>
                 {group.members.length === 1

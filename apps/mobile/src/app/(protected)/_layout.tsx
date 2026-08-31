@@ -65,6 +65,10 @@ export default function Layout() {
         name="groups/[groupId]/index"
         options={{ title: "Group" }}
       />
+      <Stack.Screen
+        name="groups/[groupId]/expenses/new"
+        options={{ title: "Add expense" }}
+      />
     </Stack>
   );
 }
