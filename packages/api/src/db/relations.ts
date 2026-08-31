@@ -3,6 +3,10 @@ import * as schema from "./schema";
 
 export const relations = defineRelations(schema, (r) => ({
   Groups: {
+    expenses: r.many.Expenses({
+      from: r.Groups.id,
+      to: r.Expenses.groupId,
+    }),
     creator: r.one.users({
       from: r.Groups.createdBy,
       to: r.users.id,
@@ -33,6 +37,34 @@ export const relations = defineRelations(schema, (r) => ({
     }),
     creator: r.one.users({
       from: r.GroupInvites.createdBy,
+      to: r.users.id,
+    }),
+  },
+  Expenses: {
+    group: r.one.Groups({
+      from: r.Expenses.groupId,
+      to: r.Groups.id,
+    }),
+    paidBy: r.one.users({
+      from: r.Expenses.paidByUserId,
+      to: r.users.id,
+    }),
+    creator: r.one.users({
+      from: r.Expenses.createdBy,
+      to: r.users.id,
+    }),
+    splits: r.many.ExpenseSplits({
+      from: r.Expenses.id,
+      to: r.ExpenseSplits.expenseId,
+    }),
+  },
+  ExpenseSplits: {
+    expense: r.one.Expenses({
+      from: r.ExpenseSplits.expenseId,
+      to: r.Expenses.id,
+    }),
+    user: r.one.users({
+      from: r.ExpenseSplits.userId,
       to: r.users.id,
     }),
   },
