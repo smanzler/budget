@@ -1,4 +1,4 @@
-import { count, desc, eq, inArray, isNull, and, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { isSplitError, splitEqually } from "@budget/shared";
@@ -21,6 +21,8 @@ async function activeMemberIds(groupId: string) {
   return new Set(rows.map((row) => row.userId));
 }
 
+const sqlNumber = (value: string) => sql<number>`${value}`.mapWith(Number);
+
 export const expensesRouter = router({
   list: protectedProcedure
     .input(z.object({ groupId: z.uuid() }))
@@ -38,6 +40,12 @@ export const expensesRouter = router({
           spentAt: Expenses.spentAt,
           paidById: users.id,
           paidByName: users.name,
+          participantCount: sqlNumber(
+            `(select count(*) from ${ExpenseSplits} where ${ExpenseSplits.expenseId} = ${Expenses.id})`,
+          ),
+          myShareMinor: sqlNumber(
+            `(select coalesce(sum(${ExpenseSplits.amountMinor}), 0) from ${ExpenseSplits} where ${ExpenseSplits.expenseId} = ${Expenses.id} and ${ExpenseSplits.userId} = ${user.id})`,
+          ),
         })
         .from(Expenses)
         .innerJoin(users, eq(users.id, Expenses.paidByUserId))
@@ -45,47 +53,17 @@ export const expensesRouter = router({
         .orderBy(desc(Expenses.spentAt), desc(Expenses.createdAt))
         .limit(EXPENSE_PAGE_SIZE);
 
-      if (expenses.length === 0) {
-        return [];
-      }
-
-      const splitTotals = await db
-        .select({
-          expenseId: ExpenseSplits.expenseId,
-          participantCount: count(),
-          myShareMinor:
-            sql<number>`coalesce(sum(case when ${ExpenseSplits.userId} = ${user.id} then ${ExpenseSplits.amountMinor} else 0 end), 0)`.mapWith(
-              Number,
-            ),
-        })
-        .from(ExpenseSplits)
-        .where(
-          inArray(
-            ExpenseSplits.expenseId,
-            expenses.map((expense) => expense.id),
-          ),
-        )
-        .groupBy(ExpenseSplits.expenseId);
-
-      const totalsByExpense = new Map(
-        splitTotals.map((row) => [row.expenseId, row]),
-      );
-
-      return expenses.map((expense) => {
-        const totals = totalsByExpense.get(expense.id);
-
-        return {
-          id: expense.id,
-          description: expense.description,
-          totalMinor: expense.totalMinor,
-          // tRPC has no transformer: send a string.
-          spentAt: expense.spentAt.toISOString(),
-          paidBy: { id: expense.paidById, name: expense.paidByName },
-          isPaidByMe: expense.paidById === user.id,
-          participantCount: totals?.participantCount ?? 0,
-          myShareMinor: totals?.myShareMinor ?? 0,
-        };
-      });
+      return expenses.map((expense) => ({
+        id: expense.id,
+        description: expense.description,
+        totalMinor: expense.totalMinor,
+        // tRPC has no transformer: send a string.
+        spentAt: expense.spentAt.toISOString(),
+        paidBy: { id: expense.paidById, name: expense.paidByName },
+        isPaidByMe: expense.paidById === user.id,
+        participantCount: expense.participantCount,
+        myShareMinor: expense.myShareMinor,
+      }));
     }),
 
   create: protectedProcedure
