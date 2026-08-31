@@ -1,9 +1,5 @@
 export type SplitErrorCode =
-  | "no_participants"
-  | "duplicate_participant"
-  | "invalid_amount"
-  | "invalid_weight"
-  | "zero_weight_total";
+  "no_participants" | "duplicate_participant" | "invalid_amount";
 
 export class SplitError extends Error {
   readonly code: SplitErrorCode;
@@ -25,90 +21,16 @@ export type SplitShare = {
 };
 
 /**
- * The parts always add up to `totalMinor`. Each weight must be a non-negative
- * integer, and at least one weight must be more than zero.
+ * An even split. The amounts always add up to `totalMinor`.
  *
- * Give the weights in a stable order: a leftover minor unit goes to the largest
- * remainder, then to the lowest index.
- */
-export function allocate(totalMinor: number, weights: number[]): number[] {
-  if (!Number.isSafeInteger(totalMinor)) {
-    throw new SplitError(
-      "invalid_amount",
-      `Amount ${totalMinor} must be an integer number of minor units.`,
-    );
-  }
-
-  if (weights.length === 0) {
-    throw new SplitError(
-      "no_participants",
-      "Nothing to allocate the amount to.",
-    );
-  }
-
-  let weightTotal = 0;
-
-  for (const weight of weights) {
-    if (!Number.isSafeInteger(weight) || weight < 0) {
-      throw new SplitError(
-        "invalid_weight",
-        `Weight ${weight} must be a non-negative integer.`,
-      );
-    }
-    weightTotal += weight;
-  }
-
-  if (weightTotal === 0) {
-    throw new SplitError(
-      "zero_weight_total",
-      "At least one participant must have a non-zero share.",
-    );
-  }
-
-  const sign = totalMinor < 0 ? -1 : 1;
-  const magnitude = Math.abs(totalMinor);
-
-  const parts: number[] = [];
-  const remainders: { index: number; remainder: number }[] = [];
-  let assigned = 0;
-
-  weights.forEach((weight, index) => {
-    const exact = magnitude * weight;
-
-    if (!Number.isSafeInteger(exact)) {
-      throw new SplitError(
-        "invalid_amount",
-        "Amount and weights are too large to allocate exactly.",
-      );
-    }
-
-    const part = Math.floor(exact / weightTotal);
-
-    parts.push(part);
-    assigned += part;
-    remainders.push({ index, remainder: exact - part * weightTotal });
-  });
-
-  remainders.sort((a, b) => b.remainder - a.remainder || a.index - b.index);
-
-  let leftover = magnitude - assigned;
-
-  for (const { index } of remainders) {
-    if (leftover <= 0) break;
-    parts[index] = (parts[index] ?? 0) + 1;
-    leftover -= 1;
-  }
-
-  return sign === 1 ? parts : parts.map((part) => -part);
-}
-
-/**
- * An even split. The odd minor units go to the users that sort first by id, so
- * the result does not change with the order of `participantIds`.
+ * A total that does not divide evenly leaves up to one minor unit per
+ * participant. That remainder goes to `paidByUserId`, or to the first
+ * participant by id if the payer does not split this expense.
  */
 export function splitEqually(
   totalMinor: number,
   participantIds: string[],
+  paidByUserId: string,
 ): SplitShare[] {
   if (!Number.isSafeInteger(totalMinor) || totalMinor <= 0) {
     throw new SplitError(
@@ -117,26 +39,29 @@ export function splitEqually(
     );
   }
 
-  const seen = new Set<string>();
+  const sorted = [...participantIds].sort();
+  const [first] = sorted;
 
-  for (const id of participantIds) {
-    if (seen.has(id)) {
-      throw new SplitError(
-        "duplicate_participant",
-        `Participant ${id} appears more than once in the split.`,
-      );
-    }
-    seen.add(id);
+  if (first === undefined) {
+    throw new SplitError(
+      "no_participants",
+      "An expense needs at least one participant.",
+    );
   }
 
-  const sorted = [...participantIds].sort();
-  const amounts = allocate(
-    totalMinor,
-    sorted.map(() => 1),
-  );
+  if (new Set(sorted).size !== sorted.length) {
+    throw new SplitError(
+      "duplicate_participant",
+      "A participant appears more than once in the split.",
+    );
+  }
 
-  return sorted.map((userId, index) => ({
+  const base = Math.floor(totalMinor / sorted.length);
+  const remainder = totalMinor - base * sorted.length;
+  const absorbs = sorted.includes(paidByUserId) ? paidByUserId : first;
+
+  return sorted.map((userId) => ({
     userId,
-    amountMinor: amounts[index] ?? 0,
+    amountMinor: userId === absorbs ? base + remainder : base,
   }));
 }

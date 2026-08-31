@@ -126,7 +126,7 @@ export const expensesRouter = router({
       let shares;
 
       try {
-        shares = splitEqually(totalMinor, participantIds);
+        shares = splitEqually(totalMinor, participantIds, paidByUserId);
       } catch (caught) {
         if (isSplitError(caught)) {
           throw new TRPCError({
