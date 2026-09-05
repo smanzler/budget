@@ -1,5 +1,5 @@
 {
-  "name": "@budget/shared",
+  "name": "@settle/shared",
   "type": "module",
   "private": true,
   "scripts": {

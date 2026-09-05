@@ -10,7 +10,7 @@ import { OtpInput } from "@/components/otp-input";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { useTRPC } from "@/lib/trpc";
-import { INVITE_CODE_LENGTH } from "@budget/shared";
+import { INVITE_CODE_LENGTH } from "@settle/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";

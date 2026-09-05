@@ -1,6 +1,6 @@
 // All amounts are integer minor units: cents for USD, whole yen for JPY.
 
-import { currencyExponent } from "@budget/shared";
+import { currencyExponent } from "@settle/shared";
 
 /** 100 for USD, 1 for JPY. */
 export function minorUnitScale(currency: string): number {

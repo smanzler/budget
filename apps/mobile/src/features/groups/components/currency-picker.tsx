@@ -5,7 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SUPPORTED_CURRENCIES, type CurrencyCode } from "@budget/shared";
+import { SUPPORTED_CURRENCIES, type CurrencyCode } from "@settle/shared";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type CurrencyPickerProps = {

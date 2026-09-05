@@ -7,5 +7,5 @@ export default defineConfig({
   target: "node20",
   clean: true,
   sourcemap: true,
-  noExternal: ["@budget/shared"],
+  noExternal: ["@settle/shared"],
 });

@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { INVITE_CODE_LENGTH } from "@budget/shared";
+import { INVITE_CODE_LENGTH } from "@settle/shared";
 
 /**
  * Invite codes get read aloud, retyped and pasted with stray spacing, so they

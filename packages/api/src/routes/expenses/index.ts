@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { isSplitError, splitEqually } from "@budget/shared";
+import { isSplitError, splitEqually } from "@settle/shared";
 import db from "../../db/index";
 import { Expenses, GroupMembers, LedgerEntries, users } from "../../db/schema";
 import { requireMembership } from "../../lib/groups";

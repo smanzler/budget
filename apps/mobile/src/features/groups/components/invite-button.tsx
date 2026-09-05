@@ -85,7 +85,7 @@ export function InviteButton({ groupId, groupName }: InviteButtonProps) {
 
                 // A dismissed share sheet rejects on some platforms.
                 Share.share({
-                  message: `Join "${groupName}" on budget with the code ${invite.code}`,
+                  message: `Join "${groupName}" on settle with the code ${invite.code}`,
                 }).catch(() => {});
               }}
             >

@@ -1,5 +1,5 @@
 import { createLinks, TRPCProvider } from "@/lib/trpc";
-import { AppRouter } from "@budget/api";
+import { AppRouter } from "@settle/api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createTRPCClient } from "@trpc/client";
 import { useState } from "react";

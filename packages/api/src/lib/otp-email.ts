@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 const ICON_BASE64 = readFileSync(
-  new URL(import.meta.resolve("@budget/shared/assets/images/icon-email.png")),
+  new URL(import.meta.resolve("@settle/shared/assets/images/icon-email.png")),
 ).toString("base64");
 
 export function renderOtpEmail({
@@ -22,8 +22,8 @@ export function renderOtpEmail({
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td style="padding:32px 32px 8px 32px;text-align:center;">
-                <img src="data:image/png;base64,${ICON_BASE64}" width="28" height="28" alt="Budget" style="display:inline-block;vertical-align:middle;border-radius:6px;margin-right:8px;" />
-                <span style="font-size:15px;font-weight:600;letter-spacing:0.02em;color:#09090b;vertical-align:middle;">Budget</span>
+                <img src="data:image/png;base64,${ICON_BASE64}" width="28" height="28" alt="Settle" style="display:inline-block;vertical-align:middle;border-radius:6px;margin-right:8px;" />
+                <span style="font-size:15px;font-weight:600;letter-spacing:0.02em;color:#09090b;vertical-align:middle;">Settle</span>
               </td>
             </tr>
             <tr>

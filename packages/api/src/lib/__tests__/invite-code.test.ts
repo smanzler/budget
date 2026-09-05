@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { INVITE_CODE_LENGTH } from "@budget/shared";
+import { INVITE_CODE_LENGTH } from "@settle/shared";
 import {
   generateInviteCode,
   INVITE_TTL_DAYS,

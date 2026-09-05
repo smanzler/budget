@@ -1,4 +1,4 @@
-# budget
+# settle
 
 pnpm monorepo starting point: Expo mobile app, TanStack Start web app, Fastify +
 tRPC API, shared types.
@@ -35,8 +35,8 @@ docker/         Local Postgres, pgAdmin and Mailpit
 3. `pnpm start` — Postgres (5432), pgAdmin (15433), Mailpit (8025), S3 mock
    (9090).
 4. Create the first migration, then apply it:
-   `pnpm --filter @budget/api exec drizzle-kit generate` and
-   `pnpm --filter @budget/api exec drizzle-kit migrate`
+   `pnpm --filter @settle/api exec drizzle-kit generate` and
+   `pnpm --filter @settle/api exec drizzle-kit migrate`
 5. `pnpm dev` — runs docker, API, mobile and web in tmux panes
 
 Sign-in codes land in Mailpit at http://localhost:8025.

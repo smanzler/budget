@@ -2,7 +2,7 @@ import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 
-import favicon from "@budget/shared/assets/images/favicon.png";
+import favicon from "@settle/shared/assets/images/favicon.png";
 
 import appCss from "../styles.css?url";
 
@@ -17,11 +17,11 @@ export const Route = createRootRoute({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "Budget",
+        title: "Settle",
       },
       {
         name: "description",
-        content: "Budget web app.",
+        content: "Settle web app.",
       },
     ],
     links: [

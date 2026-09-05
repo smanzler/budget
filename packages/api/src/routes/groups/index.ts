@@ -2,7 +2,7 @@ import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { currencyCodeSchema } from "@budget/shared";
+import { currencyCodeSchema } from "@settle/shared";
 import db from "../../db/index";
 import { GroupInvites, GroupMembers, Groups, users } from "../../db/schema";
 import { groupNetBalances, userNetBalancesByGroup } from "../../lib/balances";

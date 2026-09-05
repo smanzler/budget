@@ -5,7 +5,7 @@
 # NOTE: `app` must match an app that exists on your Fly account — run
 # `fly apps create <name>` (or `fly launch`) before the first deploy.
 
-app = 'sigh-budget-api'
+app = 'sigh-settle-api'
 primary_region = 'ord'
 
 [build]

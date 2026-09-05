@@ -1,4 +1,4 @@
-# budget
+# settle
 
 ## Frontend styling
 

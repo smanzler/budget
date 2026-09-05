@@ -1,5 +1,5 @@
 {
-  "name": "budget",
+  "name": "settle",
   "version": "1.0.0",
   "scripts": {
     "start": "docker compose -f docker/docker-compose.yml up",
@@ -13,8 +13,8 @@
     "dev": "./dev.sh"
   },
   "lint-staged": {
-    "apps/mobile/**/*.{js,jsx,ts,tsx}": "pnpm --filter @budget/mobile exec eslint --fix",
-    "apps/web/**/*.{js,jsx,ts,tsx}": "pnpm --filter @budget/web exec eslint --fix",
+    "apps/mobile/**/*.{js,jsx,ts,tsx}": "pnpm --filter @settle/mobile exec eslint --fix",
+    "apps/web/**/*.{js,jsx,ts,tsx}": "pnpm --filter @settle/web exec eslint --fix",
     "packages/**/*.{js,jsx,ts,tsx,mjs,mts,cjs,cts}": "eslint --fix",
     "**/*": "prettier --write --ignore-unknown"
   },

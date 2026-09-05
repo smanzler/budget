@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { useTRPC } from "@/lib/trpc";
-import { DEFAULT_CURRENCY, type CurrencyCode } from "@budget/shared";
+import { DEFAULT_CURRENCY, type CurrencyCode } from "@settle/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";

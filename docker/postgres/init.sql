@@ -1,2 +1,2 @@
-CREATE USER budget WITH PASSWORD 'budget';
-CREATE DATABASE budget OWNER budget;
+CREATE USER settle WITH PASSWORD 'settle';
+CREATE DATABASE settle OWNER settle;
