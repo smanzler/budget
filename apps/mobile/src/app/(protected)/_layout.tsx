@@ -1,28 +1,7 @@
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
+import { HeaderLink } from "@/components/header-link";
 import { usePushNotificationRegistration } from "@/features/notifications/hooks/use-push-notification-registration";
-import { Link, Stack } from "expo-router";
-import type { Href } from "expo-router";
+import { Stack } from "expo-router";
 import { CircleUserRound, Plus } from "lucide-react-native";
-import type { LucideIcon } from "lucide-react-native";
-
-function HeaderLink({
-  icon,
-  label,
-  href,
-}: {
-  icon: LucideIcon;
-  label: string;
-  href: Href;
-}) {
-  return (
-    <Link href={href} asChild>
-      <Button variant="ghost" size="icon" accessibilityLabel={label}>
-        <Icon as={icon} />
-      </Button>
-    </Link>
-  );
-}
 
 export default function Layout() {
   usePushNotificationRegistration();
@@ -68,6 +47,10 @@ export default function Layout() {
       <Stack.Screen
         name="groups/[groupId]/expenses/new"
         options={{ title: "Add expense" }}
+      />
+      <Stack.Screen
+        name="groups/[groupId]/settings"
+        options={{ title: "Settings" }}
       />
     </Stack>
   );
