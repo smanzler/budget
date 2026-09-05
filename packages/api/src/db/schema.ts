@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -6,6 +7,7 @@ import {
   integer,
   index,
   unique,
+  uniqueIndex,
   jsonb,
   pgEnum,
 } from "drizzle-orm/pg-core";
@@ -107,11 +109,19 @@ export const Expenses = pgTable(
   (t) => [index("expenses_group_id_spent_at_idx").on(t.groupId, t.spentAt)],
 );
 
-// The amounts add up to the total of the expense.
-export const ExpenseSplits = pgTable(
-  "expense_splits",
+/**
+ * The two sides of an expense: a positive amount is money a user put in, a
+ * negative amount is money they used. The rows of one expense add up to zero,
+ * and the rows of one user in one group add up to their balance.
+ */
+export const LedgerEntries = pgTable(
+  "ledger_entries",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    // Kept on the row so a balance reads one table.
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => Groups.id, { onDelete: "cascade" }),
     expenseId: uuid("expense_id")
       .notNull()
       .references(() => Expenses.id, { onDelete: "cascade" }),
@@ -122,8 +132,12 @@ export const ExpenseSplits = pgTable(
     amountMinor: integer("amount_minor").notNull(),
   },
   (t) => [
-    unique().on(t.expenseId, t.userId),
-    index("expense_splits_user_id_idx").on(t.userId),
+    index("ledger_entries_group_id_user_id_idx").on(t.groupId, t.userId),
+    index("ledger_entries_expense_id_idx").on(t.expenseId),
+    // A user uses money one time in an expense. Money they put in is a second row.
+    uniqueIndex("ledger_entries_expense_id_user_id_used_idx")
+      .on(t.expenseId, t.userId)
+      .where(sql`${t.amountMinor} < 0`),
   ],
 );
 

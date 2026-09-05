@@ -53,18 +53,22 @@ export const relations = defineRelations(schema, (r) => ({
       from: r.Expenses.createdBy,
       to: r.users.id,
     }),
-    splits: r.many.ExpenseSplits({
+    entries: r.many.LedgerEntries({
       from: r.Expenses.id,
-      to: r.ExpenseSplits.expenseId,
+      to: r.LedgerEntries.expenseId,
     }),
   },
-  ExpenseSplits: {
+  LedgerEntries: {
     expense: r.one.Expenses({
-      from: r.ExpenseSplits.expenseId,
+      from: r.LedgerEntries.expenseId,
       to: r.Expenses.id,
     }),
+    group: r.one.Groups({
+      from: r.LedgerEntries.groupId,
+      to: r.Groups.id,
+    }),
     user: r.one.users({
-      from: r.ExpenseSplits.userId,
+      from: r.LedgerEntries.userId,
       to: r.users.id,
     }),
   },

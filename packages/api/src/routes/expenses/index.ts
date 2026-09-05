@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { isSplitError, splitEqually } from "@budget/shared";
 import db from "../../db/index";
-import { ExpenseSplits, Expenses, GroupMembers, users } from "../../db/schema";
+import { Expenses, GroupMembers, LedgerEntries, users } from "../../db/schema";
 import { requireMembership } from "../../lib/groups";
 import { protectedProcedure, router } from "../../lib/trpc";
 
@@ -11,6 +11,10 @@ import { protectedProcedure, router } from "../../lib/trpc";
 const MAX_TOTAL_MINOR = 2_000_000_000;
 
 const EXPENSE_PAGE_SIZE = 100;
+
+/** A `sql` fragment that Postgres gives back as a number. */
+const sqlNumber = (strings: TemplateStringsArray, ...values: unknown[]) =>
+  sql(strings, ...values).mapWith(Number);
 
 async function activeMemberIds(groupId: string) {
   const rows = await db
@@ -20,8 +24,6 @@ async function activeMemberIds(groupId: string) {
 
   return new Set(rows.map((row) => row.userId));
 }
-
-const sqlNumber = (value: string) => sql<number>`${value}`.mapWith(Number);
 
 export const expensesRouter = router({
   list: protectedProcedure
@@ -40,12 +42,17 @@ export const expensesRouter = router({
           spentAt: Expenses.spentAt,
           paidById: users.id,
           paidByName: users.name,
-          participantCount: sqlNumber(
-            `(select count(*) from ${ExpenseSplits} where ${ExpenseSplits.expenseId} = ${Expenses.id})`,
-          ),
-          myShareMinor: sqlNumber(
-            `(select coalesce(sum(${ExpenseSplits.amountMinor}), 0) from ${ExpenseSplits} where ${ExpenseSplits.expenseId} = ${Expenses.id} and ${ExpenseSplits.userId} = ${user.id})`,
-          ),
+          participantCount: sqlNumber`(
+            select count(*) from ${LedgerEntries}
+            where ${LedgerEntries.expenseId} = ${Expenses.id}
+              and ${LedgerEntries.amountMinor} < 0
+          )`,
+          myShareMinor: sqlNumber`(
+            select coalesce(-sum(${LedgerEntries.amountMinor}), 0) from ${LedgerEntries}
+            where ${LedgerEntries.expenseId} = ${Expenses.id}
+              and ${LedgerEntries.userId} = ${user.id}
+              and ${LedgerEntries.amountMinor} < 0
+          )`,
         })
         .from(Expenses)
         .innerJoin(users, eq(users.id, Expenses.paidByUserId))
@@ -136,13 +143,22 @@ export const expensesRouter = router({
           });
         }
 
-        await tx.insert(ExpenseSplits).values(
-          shares.map((share) => ({
+        // The payer put in the total and each participant used their share, so
+        // the rows of the expense add up to zero.
+        await tx.insert(LedgerEntries).values([
+          {
+            groupId,
+            expenseId: expense.id,
+            userId: paidByUserId,
+            amountMinor: totalMinor,
+          },
+          ...shares.map((share) => ({
+            groupId,
             expenseId: expense.id,
             userId: share.userId,
-            amountMinor: share.amountMinor,
+            amountMinor: -share.amountMinor,
           })),
-        );
+        ]);
 
         return { id: expense.id };
       });

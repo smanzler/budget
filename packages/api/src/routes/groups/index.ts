@@ -5,6 +5,7 @@ import { z } from "zod";
 import { currencyCodeSchema } from "@budget/shared";
 import db from "../../db/index";
 import { GroupInvites, GroupMembers, Groups, users } from "../../db/schema";
+import { groupNetBalances, userNetBalancesByGroup } from "../../lib/balances";
 import { requireGroup, requireMembership } from "../../lib/groups";
 import {
   isInviteUsable,
@@ -19,37 +20,48 @@ const groupNameSchema = z.string().trim().min(1).max(60);
 export const groupsRouter = router({
   invites: groupInvitesRouter,
 
-  /**
-   * The groups the caller is currently in, newest first.
-   *
-   * Joins the caller's own membership to every active membership of the same
-   * group, so one query answers both "which groups" and "how many people in
-   * each".
-   */
+  /** The groups the caller is currently in, newest first. */
   list: protectedProcedure.query(async (opts) => {
     const { user } = opts.ctx;
 
+    // The caller's own membership joined to every active membership of the same
+    // group answers both "which groups" and "how many people in each".
     const myMembership = alias(GroupMembers, "my_membership");
 
-    return db
-      .select({
-        id: Groups.id,
-        name: Groups.name,
-        currency: Groups.currency,
-        memberCount: count(GroupMembers.id),
-      })
-      .from(myMembership)
-      .innerJoin(Groups, eq(Groups.id, myMembership.groupId))
-      .innerJoin(
-        GroupMembers,
-        and(eq(GroupMembers.groupId, Groups.id), isNull(GroupMembers.leftAt)),
-      )
-      .where(and(eq(myMembership.userId, user.id), isNull(myMembership.leftAt)))
-      .groupBy(Groups.id)
-      .orderBy(desc(Groups.createdAt));
+    const [groups, net] = await Promise.all([
+      db
+        .select({
+          id: Groups.id,
+          name: Groups.name,
+          currency: Groups.currency,
+          memberCount: count(GroupMembers.id),
+        })
+        .from(myMembership)
+        .innerJoin(Groups, eq(Groups.id, myMembership.groupId))
+        .innerJoin(
+          GroupMembers,
+          and(eq(GroupMembers.groupId, Groups.id), isNull(GroupMembers.leftAt)),
+        )
+        .where(
+          and(eq(myMembership.userId, user.id), isNull(myMembership.leftAt)),
+        )
+        .groupBy(Groups.id)
+        .orderBy(desc(Groups.createdAt)),
+      userNetBalancesByGroup(user.id),
+    ]);
+
+    return groups.map((group) => ({
+      ...group,
+      myNetMinor: net.get(group.id) ?? 0,
+    }));
   }),
 
-  /** A single group with its current members. Members only. */
+  /**
+   * A single group with its current members. Members only.
+   *
+   * `netMinor` is positive for a member the group owes, negative for one who
+   * owes the group.
+   */
   get: protectedProcedure
     .input(z.object({ groupId: z.uuid() }))
     .query(async (opts) => {
@@ -58,25 +70,32 @@ export const groupsRouter = router({
 
       const group = await requireGroup(groupId, user.id);
 
-      const members = await db
-        .select({
-          id: users.id,
-          name: users.name,
-          email: users.email,
-          image: users.image,
-        })
-        .from(GroupMembers)
-        .innerJoin(users, eq(users.id, GroupMembers.userId))
-        .where(
-          and(eq(GroupMembers.groupId, groupId), isNull(GroupMembers.leftAt)),
-        )
-        .orderBy(GroupMembers.joinedAt);
+      const [members, net] = await Promise.all([
+        db
+          .select({
+            id: users.id,
+            name: users.name,
+            email: users.email,
+            image: users.image,
+          })
+          .from(GroupMembers)
+          .innerJoin(users, eq(users.id, GroupMembers.userId))
+          .where(
+            and(eq(GroupMembers.groupId, groupId), isNull(GroupMembers.leftAt)),
+          )
+          .orderBy(GroupMembers.joinedAt),
+        groupNetBalances(groupId),
+      ]);
 
       return {
         id: group.id,
         name: group.name,
         currency: group.currency,
-        members,
+        members: members.map((member) => ({
+          ...member,
+          netMinor: net.get(member.id) ?? 0,
+        })),
+        myNetMinor: net.get(user.id) ?? 0,
       };
     }),
 
@@ -140,8 +159,8 @@ export const groupsRouter = router({
 
   /**
    * Leaving is a soft exit: the membership row stays so the person still
-   * resolves on past activity. Once expenses exist this will also have to
-   * refuse while the member still owes or is owed something.
+   * resolves on past activity. It needs a settled balance, because a member who
+   * is gone can no longer be paid or asked to pay.
    */
   leave: protectedProcedure
     .input(z.object({ groupId: z.uuid() }))
@@ -150,6 +169,15 @@ export const groupsRouter = router({
       const { groupId } = opts.input;
 
       await requireMembership(groupId, user.id);
+
+      const net = await groupNetBalances(groupId);
+
+      if ((net.get(user.id) ?? 0) !== 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Settle up with the group before you leave it",
+        });
+      }
 
       await db
         .update(GroupMembers)

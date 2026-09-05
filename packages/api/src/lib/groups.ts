@@ -37,19 +37,25 @@ export async function requireMembership(groupId: string, userId: string) {
   return membership;
 }
 
-/** The group itself, once membership has been established. */
+/** The group itself, for a member of it. */
 export async function requireGroup(groupId: string, userId: string) {
-  await requireMembership(groupId, userId);
-
-  const [group] = await db
-    .select()
+  const [row] = await db
+    .select({ group: Groups })
     .from(Groups)
+    .innerJoin(
+      GroupMembers,
+      and(
+        eq(GroupMembers.groupId, Groups.id),
+        eq(GroupMembers.userId, userId),
+        isNull(GroupMembers.leftAt),
+      ),
+    )
     .where(eq(Groups.id, groupId))
     .limit(1);
 
-  if (!group) {
+  if (!row) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
   }
 
-  return group;
+  return row.group;
 }
