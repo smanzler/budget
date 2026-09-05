@@ -75,9 +75,18 @@ export function AddExpense() {
   const createExpense = useMutation(
     trpc.expenses.create.mutationOptions({
       onSuccess: async () => {
-        await queryClient.invalidateQueries({
-          queryKey: trpc.expenses.list.queryKey({ groupId }),
-        });
+        // The balances on both group screens move with every expense.
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: trpc.expenses.list.queryKey({ groupId }),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: trpc.groups.get.queryKey({ groupId }),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: trpc.groups.list.queryKey(),
+          }),
+        ]);
 
         router.back();
       },

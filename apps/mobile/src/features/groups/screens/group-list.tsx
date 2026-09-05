@@ -18,14 +18,24 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
+import { formatAmount } from "@/lib/money";
 import { useTRPC } from "@/lib/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "expo-router";
 import { Users } from "lucide-react-native";
 import { View } from "react-native";
+import { balanceToneClass } from "../balance";
 
 function memberLabel(count: number) {
   return count === 1 ? "1 member" : `${count} members`;
+}
+
+function balanceLabel(netMinor: number, currency: string) {
+  if (netMinor === 0) return "settled up";
+
+  const amount = formatAmount(netMinor, currency, { signDisplay: "never" });
+
+  return netMinor > 0 ? `you're owed ${amount}` : `you owe ${amount}`;
 }
 
 export function GroupList() {
@@ -85,10 +95,17 @@ export function GroupList() {
               }}
               asChild
             >
-              <SectionItem>
-                <SectionItemTitle>{group.name}</SectionItemTitle>
-                <SectionItemContent>
-                  {memberLabel(group.memberCount)}
+              <SectionItem className="h-auto py-2">
+                <View className="flex-1 gap-0.5">
+                  <SectionItemTitle>{group.name}</SectionItemTitle>
+                  <Text className="text-muted-foreground text-xs">
+                    {memberLabel(group.memberCount)}
+                  </Text>
+                </View>
+                <SectionItemContent
+                  textClassName={balanceToneClass(group.myNetMinor)}
+                >
+                  {balanceLabel(group.myNetMinor, group.currency)}
                 </SectionItemContent>
               </SectionItem>
             </Link>

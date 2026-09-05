@@ -27,8 +27,10 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import { TriangleAlert } from "lucide-react-native";
 import { View } from "react-native";
 import { ExpenseList } from "@/features/expenses/components/expense-list";
+import { BalanceSummary } from "../components/balance-summary";
 import { InviteButton } from "../components/invite-button";
 import { LeaveGroupDialog } from "../components/leave-group-dialog";
+import { MemberBalance } from "../components/member-balance";
 import { RenameGroupDialog } from "../components/rename-group-dialog";
 
 function initialsOf(name: string) {
@@ -89,6 +91,11 @@ export function GroupDetail() {
       >
         {group && (
           <>
+            <BalanceSummary
+              netMinor={group.myNetMinor}
+              currency={group.currency}
+            />
+
             <ExpenseList groupId={group.id} currency={group.currency} />
 
             <Section>
@@ -99,7 +106,7 @@ export function GroupDetail() {
               </SectionTitle>
               <SectionContent>
                 {group.members.map((member) => (
-                  <SectionItem key={member.id}>
+                  <SectionItem key={member.id} className="h-auto py-2">
                     <Avatar alt={member.name}>
                       {member.image ? (
                         <AvatarImage source={{ uri: member.image }} />
@@ -110,17 +117,27 @@ export function GroupDetail() {
                         </Text>
                       </AvatarFallback>
                     </Avatar>
-                    <SectionItemTitle>{member.name}</SectionItemTitle>
+                    <View className="flex-1 gap-0.5">
+                      <View className="flex-row items-center gap-2">
+                        <SectionItemTitle>{member.name}</SectionItemTitle>
+                        {member.id === session?.user.id && (
+                          <Badge variant="secondary">
+                            <Text>You</Text>
+                          </Badge>
+                        )}
+                      </View>
+                      <Text
+                        className="text-muted-foreground text-xs"
+                        numberOfLines={1}
+                      >
+                        {member.email}
+                      </Text>
+                    </View>
                     <SectionItemContent>
-                      {member.id === session?.user.id ? (
-                        <Badge variant="secondary">
-                          <Text>You</Text>
-                        </Badge>
-                      ) : (
-                        <Text className="text-muted-foreground text-sm">
-                          {member.email}
-                        </Text>
-                      )}
+                      <MemberBalance
+                        netMinor={member.netMinor}
+                        currency={group.currency}
+                      />
                     </SectionItemContent>
                   </SectionItem>
                 ))}
