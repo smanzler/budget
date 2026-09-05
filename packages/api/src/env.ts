@@ -13,7 +13,10 @@ export const envSchema = z.object({
   BUCKET_ACCESS_KEY_ID: z.string(),
   BUCKET_SECRET_KEY: z.string(),
   BUCKET_NAME: z.string(),
+  /** Public base URL for reading objects. */
   BUCKET_URL: z.string(),
+  /** S3 API endpoint. Leave unset for AWS itself. */
+  BUCKET_ENDPOINT: z.string().optional(),
 
   SMTP_HOST: z.string().default("localhost"),
   SMTP_PORT: z.coerce.number().default(21025),

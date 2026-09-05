@@ -54,6 +54,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-font",
     "expo-web-browser",
     "expo-image",
+    [
+      "expo-image-picker",
+      {
+        photosPermission:
+          "Allow $(PRODUCT_NAME) to use your photos to set your profile picture.",
+      },
+    ],
     "expo-secure-store",
     "expo-status-bar",
   ],

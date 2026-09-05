@@ -31,6 +31,17 @@ services:
     volumes:
       - ./.local/pgadmin-data/:/var/lib/pgadmin
 
+  s3:
+    image: adobe/s3mock:latest
+    ports:
+      - "9090:9090"
+    environment:
+      - COM_ADOBE_TESTING_S3MOCK_STORE_INITIALBUCKETS=bucket
+      - COM_ADOBE_TESTING_S3MOCK_STORE_RETAINFILESONEXIT=true
+      - COM_ADOBE_TESTING_S3MOCK_STORE_ROOT=/data
+    volumes:
+      - ./.s3data:/data
+
   mailpit:
     image: axllent/mailpit
     ports:

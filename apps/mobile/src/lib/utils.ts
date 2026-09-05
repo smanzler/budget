@@ -14,6 +14,18 @@ const goBack = () => {
   }
 };
 
+/** Undefined when the name has no letters, so an avatar can fall back to its icon. */
+const initialsOf = (name: string) => {
+  const initials = name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+
+  return initials || undefined;
+};
+
 const formatDuration = (seconds: number) => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -46,4 +58,4 @@ const formatDate = (dateString: string) => {
   }
 };
 
-export { formatDate, formatDuration, goBack };
+export { formatDate, formatDuration, goBack, initialsOf };

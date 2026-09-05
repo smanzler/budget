@@ -9,19 +9,30 @@ import { BodyScrollView } from "@/components/ui/body-scroll-view";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { authClient } from "@/lib/auth-client";
+import { AvatarPicker } from "../components/avatar-picker";
+import { EditNameDialog } from "../components/edit-name-dialog";
 
 export function Account() {
   const { data: session } = authClient.useSession();
+  const user = session?.user;
 
   return (
     <BodyScrollView>
+      <AvatarPicker name={user?.name ?? ""} image={user?.image} />
+
       <Section>
         <SectionContent>
+          <EditNameDialog currentName={user?.name ?? ""}>
+            <SectionItem>
+              <SectionItemTitle>Name</SectionItemTitle>
+              <SectionItemContent>{user?.name}</SectionItemContent>
+            </SectionItem>
+          </EditNameDialog>
           <SectionItem>
             <SectionItemTitle>Signed in as</SectionItemTitle>
             <SectionItemContent>
               <Text className="text-muted-foreground text-sm">
-                {session?.user.email}
+                {user?.email}
               </Text>
             </SectionItemContent>
           </SectionItem>

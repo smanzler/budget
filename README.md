@@ -21,7 +21,7 @@ docker/         Local Postgres, pgAdmin and Mailpit
 - **Push notifications** — `notify()` writes a notification row and queues a
   delivery on pg-boss, which sends it via Expo. The mobile app registers its
   push token on launch.
-- **File uploads** — `files.createUpload` / `files.confirmUpload` hand out
+- **File uploads** — `user.avatar.createUpload` / `user.avatar.set` hand out
   presigned S3 URLs so clients upload straight to the bucket.
 
 ## Local setup
@@ -32,7 +32,8 @@ docker/         Local Postgres, pgAdmin and Mailpit
    - `cp packages/api/.env.example packages/api/.env` — generate
      `BETTER_AUTH_SECRET` with `openssl rand -base64 32`
    - `cp apps/mobile/.env.example apps/mobile/.env`
-3. `pnpm start` — Postgres (5432), pgAdmin (15433), Mailpit (8025)
+3. `pnpm start` — Postgres (5432), pgAdmin (15433), Mailpit (8025), S3 mock
+   (9090).
 4. Create the first migration, then apply it:
    `pnpm --filter @budget/api exec drizzle-kit generate` and
    `pnpm --filter @budget/api exec drizzle-kit migrate`
@@ -58,9 +59,9 @@ Things that can't be inherited from the template — do these once per project:
       `DATABASE_URL` GitHub secrets.
 - [ ] **Vercel**: set `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`
       GitHub secrets for the web deploy, and `EXPO_TOKEN` for mobile OTA.
-- [ ] **S3**: create a bucket and fill in the `BUCKET_*` env vars, or delete
-      `packages/api/src/lib/s3.ts` and the `files` router if you don't need
-      uploads.
+- [ ] **S3**: create a bucket and fill in the `BUCKET_*` env vars. Leave
+      `BUCKET_ENDPOINT` unset for AWS itself; any other S3-compatible service
+      (and the local mock) needs it.
 
 ## Notes
 

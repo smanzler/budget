@@ -15,11 +15,11 @@ import {
   SectionItemTitle,
   SectionTitle,
 } from "@/components/section";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
+import { UserAvatar } from "@/components/user-avatar";
 import { authClient } from "@/lib/auth-client";
 import { useTRPC } from "@/lib/trpc";
 import { useQuery } from "@tanstack/react-query";
@@ -30,15 +30,6 @@ import { InviteButton } from "../components/invite-button";
 import { LeaveGroupDialog } from "../components/leave-group-dialog";
 import { MemberBalance } from "../components/member-balance";
 import { RenameGroupDialog } from "../components/rename-group-dialog";
-
-function initialsOf(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-}
 
 export function GroupSettings() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
@@ -85,14 +76,7 @@ export function GroupSettings() {
             <SectionContent>
               {group.members.map((member) => (
                 <SectionItem key={member.id} className="h-auto py-2">
-                  <Avatar alt={member.name}>
-                    {member.image ? (
-                      <AvatarImage source={{ uri: member.image }} />
-                    ) : null}
-                    <AvatarFallback>
-                      <Text className="text-xs">{initialsOf(member.name)}</Text>
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar name={member.name} image={member.image} />
                   <View className="flex-1 gap-0.5">
                     <View className="flex-row items-center gap-2">
                       <SectionItemTitle>{member.name}</SectionItemTitle>
