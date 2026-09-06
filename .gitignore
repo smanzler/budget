@@ -4,3 +4,4 @@ node_modules
 .local
 dist
 google-services.json
+.s3data
