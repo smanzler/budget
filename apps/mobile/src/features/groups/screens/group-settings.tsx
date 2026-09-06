@@ -9,6 +9,7 @@ import {
 } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { UserAvatar } from "@/components/user-avatar";
@@ -16,9 +17,10 @@ import { authClient } from "@/lib/auth-client";
 import { useTRPC } from "@/lib/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
+import { UserPlus } from "lucide-react-native";
 import { View } from "react-native";
 import { GroupError } from "../components/group-error";
-import { InviteButton } from "../components/invite-button";
+import { InviteDialog } from "../components/invite-dialog";
 import { LeaveGroupDialog } from "../components/leave-group-dialog";
 import { MemberBalance } from "../components/member-balance";
 import { RenameGroupDialog } from "../components/rename-group-dialog";
@@ -83,10 +85,14 @@ export function GroupSettings() {
                   </SectionItemContent>
                 </SectionItem>
               ))}
+              <InviteDialog groupId={group.id} groupName={group.name}>
+                <SectionItem className="justify-center">
+                  <Icon as={UserPlus} />
+                  <SectionItemTitle>Invite people</SectionItemTitle>
+                </SectionItem>
+              </InviteDialog>
             </SectionContent>
           </Section>
-
-          <InviteButton groupId={group.id} groupName={group.name} />
 
           <Section>
             <SectionContent>

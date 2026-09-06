@@ -49,12 +49,19 @@ function SectionDescription({
   );
 }
 
+// The section tells each row whether it is the last one, so a row keeps its
+// place through a wrapper like `Link asChild` or `DialogTrigger asChild`.
+const IsLastItemContext = React.createContext(false);
+
 function SectionContent({
   className,
   children,
   ...props
 }: ViewProps & React.RefAttributes<View>) {
-  const count = React.Children.count(children);
+  // `toArray` drops the null and the false that a conditional row leaves, so
+  // the last entry is the last row that shows.
+  const items = React.Children.toArray(children);
+
   return (
     <View
       className={cn(
@@ -63,35 +70,33 @@ function SectionContent({
       )}
       {...props}
     >
-      {React.Children.map(children, (child, index) =>
-        React.isValidElement(child) && child.type === SectionItem
-          ? React.cloneElement(
-              child as React.ReactElement<{ isLast?: boolean }>,
-              {
-                isLast: index === count - 1,
-              },
-            )
-          : child,
-      )}
+      {items.map((child, index) => (
+        <IsLastItemContext.Provider
+          key={React.isValidElement(child) ? child.key : index}
+          value={index === items.length - 1}
+        >
+          {child}
+        </IsLastItemContext.Provider>
+      ))}
     </View>
   );
 }
 
 function SectionItem({
   className,
-  isLast,
   onPress,
   ...viewProps
 }: ViewProps &
   React.RefAttributes<View> & {
     onPress?: () => void;
-    isLast?: boolean;
   }) {
+  const isLast = React.useContext(IsLastItemContext);
+
   const content = (
     <View
       className={cn(
         "flex-row gap-3 h-11 px-3 items-center",
-        isLast !== true && "border-b border-border",
+        !isLast && "border-b border-border",
         className,
       )}
       {...viewProps}
