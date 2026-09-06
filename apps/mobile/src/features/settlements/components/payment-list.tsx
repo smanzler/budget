@@ -18,7 +18,7 @@ import {
 import { Text } from "@/components/ui/text";
 import { formatAmount } from "@/lib/money";
 import { useTRPC } from "@/lib/trpc";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "expo-router";
 import { View } from "react-native";
@@ -41,6 +41,20 @@ function summaryLine(
   const receiver = payment.to.id === currentUserId ? "you" : payment.to.name;
 
   return `${payer} paid ${receiver}`;
+}
+
+/**
+ * Green when the money came to the user, red when it left them. A payment
+ * between two other members gets no class, so the color of the caller stays.
+ */
+function amountToneClass(
+  payment: { from: { id: string }; to: { id: string } },
+  currentUserId?: string,
+) {
+  if (payment.to.id === currentUserId) return "text-success";
+  if (payment.from.id === currentUserId) return "text-destructive";
+
+  return undefined;
 }
 
 /**
@@ -107,7 +121,12 @@ export function PaymentList({
                 </View>
                 <SectionItemContent>
                   <View className="items-end gap-0.5">
-                    <Text className="text-sm font-medium">
+                    <Text
+                      className={cn(
+                        "text-sm font-medium",
+                        amountToneClass(payment, currentUserId),
+                      )}
+                    >
                       {formatAmount(payment.amountMinor, currency)}
                     </Text>
                     <Text className="text-muted-foreground text-xs">
