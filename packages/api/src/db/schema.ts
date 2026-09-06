@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  check,
   pgTable,
   text,
   timestamp,
@@ -110,9 +111,46 @@ export const Expenses = pgTable(
 );
 
 /**
- * The two sides of an expense: a positive amount is money a user put in, a
- * negative amount is money they used. The rows of one expense add up to zero,
- * and the rows of one user in one group add up to their balance.
+ * A payment one member makes to another to bring their balances back together.
+ * It moves no expense: it only records that the money changed hands.
+ */
+export const Settlements = pgTable(
+  "settlements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    groupId: uuid("group_id")
+      .notNull()
+      .references(() => Groups.id, { onDelete: "cascade" }),
+    // Restrict: keep the ledger row if the user goes away.
+    fromUserId: uuid("from_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    toUserId: uuid("to_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    // Minor units of the group currency.
+    amountMinor: integer("amount_minor").notNull(),
+    settledAt: timestamp("settled_at").notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("settlements_group_id_settled_at_idx").on(t.groupId, t.settledAt),
+    check("settlements_amount_minor_positive", sql`${t.amountMinor} > 0`),
+    check(
+      "settlements_from_user_id_not_to_user_id",
+      sql`${t.fromUserId} <> ${t.toUserId}`,
+    ),
+  ],
+);
+
+/**
+ * The two sides of an expense or of a settlement: a positive amount is money a
+ * user put in, a negative amount is money they used. The rows of one expense or
+ * settlement add up to zero, and the rows of one user in one group add up to
+ * their balance.
  */
 export const LedgerEntries = pgTable(
   "ledger_entries",
@@ -122,9 +160,12 @@ export const LedgerEntries = pgTable(
     groupId: uuid("group_id")
       .notNull()
       .references(() => Groups.id, { onDelete: "cascade" }),
-    expenseId: uuid("expense_id")
-      .notNull()
-      .references(() => Expenses.id, { onDelete: "cascade" }),
+    expenseId: uuid("expense_id").references(() => Expenses.id, {
+      onDelete: "cascade",
+    }),
+    settlementId: uuid("settlement_id").references(() => Settlements.id, {
+      onDelete: "cascade",
+    }),
     // Restrict: keep the ledger row if the user goes away.
     userId: uuid("user_id")
       .notNull()
@@ -134,10 +175,18 @@ export const LedgerEntries = pgTable(
   (t) => [
     index("ledger_entries_group_id_user_id_idx").on(t.groupId, t.userId),
     index("ledger_entries_expense_id_idx").on(t.expenseId),
+    index("ledger_entries_settlement_id_idx").on(t.settlementId),
     // A user uses money one time in an expense. Money they put in is a second row.
     uniqueIndex("ledger_entries_expense_id_user_id_used_idx")
       .on(t.expenseId, t.userId)
       .where(sql`${t.amountMinor} < 0`),
+    uniqueIndex("ledger_entries_settlement_id_user_id_used_idx")
+      .on(t.settlementId, t.userId)
+      .where(sql`${t.amountMinor} < 0`),
+    check(
+      "ledger_entries_one_source",
+      sql`(${t.expenseId} is null) <> (${t.settlementId} is null)`,
+    ),
   ],
 );
 

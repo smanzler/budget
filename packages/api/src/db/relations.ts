@@ -19,6 +19,10 @@ export const relations = defineRelations(schema, (r) => ({
       from: r.Groups.id,
       to: r.GroupInvites.groupId,
     }),
+    settlements: r.many.Settlements({
+      from: r.Groups.id,
+      to: r.Settlements.groupId,
+    }),
   },
   GroupMembers: {
     group: r.one.Groups({
@@ -58,10 +62,32 @@ export const relations = defineRelations(schema, (r) => ({
       to: r.LedgerEntries.expenseId,
     }),
   },
+  Settlements: {
+    group: r.one.Groups({
+      from: r.Settlements.groupId,
+      to: r.Groups.id,
+    }),
+    fromUser: r.one.users({
+      from: r.Settlements.fromUserId,
+      to: r.users.id,
+    }),
+    toUser: r.one.users({
+      from: r.Settlements.toUserId,
+      to: r.users.id,
+    }),
+    entries: r.many.LedgerEntries({
+      from: r.Settlements.id,
+      to: r.LedgerEntries.settlementId,
+    }),
+  },
   LedgerEntries: {
     expense: r.one.Expenses({
       from: r.LedgerEntries.expenseId,
       to: r.Expenses.id,
+    }),
+    settlement: r.one.Settlements({
+      from: r.LedgerEntries.settlementId,
+      to: r.Settlements.id,
     }),
     group: r.one.Groups({
       from: r.LedgerEntries.groupId,

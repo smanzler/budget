@@ -59,3 +59,13 @@ export async function requireGroup(groupId: string, userId: string) {
 
   return row.group;
 }
+
+/** The ids of the members who have not left. */
+export async function activeMemberIds(groupId: string) {
+  const rows = await db
+    .select({ userId: GroupMembers.userId })
+    .from(GroupMembers)
+    .where(and(eq(GroupMembers.groupId, groupId), isNull(GroupMembers.leftAt)));
+
+  return new Set(rows.map((row) => row.userId));
+}

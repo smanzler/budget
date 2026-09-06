@@ -1,29 +1,18 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { isSplitError, splitEqually } from "@settle/shared";
 import db from "../../db/index";
-import { Expenses, GroupMembers, LedgerEntries, users } from "../../db/schema";
-import { requireMembership } from "../../lib/groups";
+import { Expenses, LedgerEntries, users } from "../../db/schema";
+import { activeMemberIds, requireMembership } from "../../lib/groups";
+import { MAX_AMOUNT_MINOR } from "../../lib/money";
 import { protectedProcedure, router } from "../../lib/trpc";
-
-/** Keeps a total inside the `integer` column. */
-const MAX_TOTAL_MINOR = 2_000_000_000;
 
 const EXPENSE_PAGE_SIZE = 100;
 
 /** A `sql` fragment that Postgres gives back as a number. */
 const sqlNumber = (strings: TemplateStringsArray, ...values: unknown[]) =>
   sql(strings, ...values).mapWith(Number);
-
-async function activeMemberIds(groupId: string) {
-  const rows = await db
-    .select({ userId: GroupMembers.userId })
-    .from(GroupMembers)
-    .where(and(eq(GroupMembers.groupId, groupId), isNull(GroupMembers.leftAt)));
-
-  return new Set(rows.map((row) => row.userId));
-}
 
 export const expensesRouter = router({
   list: protectedProcedure
@@ -78,7 +67,7 @@ export const expensesRouter = router({
       z.object({
         groupId: z.uuid(),
         description: z.string().trim().min(1).max(100),
-        totalMinor: z.int().positive().max(MAX_TOTAL_MINOR),
+        totalMinor: z.int().positive().max(MAX_AMOUNT_MINOR),
         paidByUserId: z.uuid(),
         participantIds: z.array(z.uuid()).min(1),
       }),

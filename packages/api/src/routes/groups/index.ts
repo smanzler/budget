@@ -7,6 +7,7 @@ import db from "../../db/index";
 import { GroupInvites, GroupMembers, Groups, users } from "../../db/schema";
 import { groupNetBalances, userNetBalancesByGroup } from "../../lib/balances";
 import { requireGroup, requireMembership } from "../../lib/groups";
+import { simplifyDebts } from "../../lib/settle";
 import {
   isInviteUsable,
   isValidInviteCode,
@@ -60,7 +61,8 @@ export const groupsRouter = router({
    * A single group with its current members. Members only.
    *
    * `netMinor` is positive for a member the group owes, negative for one who
-   * owes the group.
+   * owes the group. `suggestedPayments` is the shortest set of payments that
+   * brings every member back to zero.
    */
   get: protectedProcedure
     .input(z.object({ groupId: z.uuid() }))
@@ -87,6 +89,13 @@ export const groupsRouter = router({
         groupNetBalances(groupId),
       ]);
 
+      // A member can only leave with a settled balance, so the current members
+      // hold the whole ledger between them.
+      const balances = members.map((member) => ({
+        userId: member.id,
+        netMinor: net.get(member.id) ?? 0,
+      }));
+
       return {
         id: group.id,
         name: group.name,
@@ -96,6 +105,7 @@ export const groupsRouter = router({
           netMinor: net.get(member.id) ?? 0,
         })),
         myNetMinor: net.get(user.id) ?? 0,
+        suggestedPayments: simplifyDebts(balances),
       };
     }),
 
