@@ -61,6 +61,10 @@ export default function Layout() {
           options={{ title: "Add expense" }}
         />
         <Stack.Screen
+          name="groups/[groupId]/settle"
+          options={{ title: "Record a payment" }}
+        />
+        <Stack.Screen
           name="groups/[groupId]/settings"
           options={{ title: "Settings" }}
         />

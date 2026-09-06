@@ -1,4 +1,5 @@
 import { AmountInput } from "@/components/amount-input";
+import { MemberSelect } from "@/components/member-select";
 import { BodyScrollView } from "@/components/ui/body-scroll-view";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +21,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { KeyboardAvoidingView, View } from "react-native";
 import { ParticipantToggles } from "../components/participant-toggles";
-import { PayerSelect } from "../components/payer-select";
 
 function splitPreview({
   totalMinor,
@@ -161,10 +161,12 @@ export function AddExpense() {
 
           <Field className="gap-1">
             <FieldLabel>Paid by</FieldLabel>
-            <PayerSelect
+            <MemberSelect
               members={members}
               value={payer}
               onChange={setPaidByUserId}
+              placeholder="Who paid?"
+              accessibilityLabel="Paid by"
               currentUserId={currentUserId}
               disabled={createExpense.isPending}
             />

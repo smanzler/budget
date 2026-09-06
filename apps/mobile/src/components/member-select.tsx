@@ -12,10 +12,12 @@ type Member = {
   name: string;
 };
 
-type PayerSelectProps = {
+type MemberSelectProps = {
   members: Member[];
   value: string;
   onChange: (userId: string) => void;
+  placeholder: string;
+  accessibilityLabel: string;
   /** The row of this user reads "You". */
   currentUserId?: string;
   disabled?: boolean;
@@ -25,13 +27,15 @@ function labelFor(member: Member, currentUserId?: string) {
   return member.id === currentUserId ? "You" : member.name;
 }
 
-export function PayerSelect({
+export function MemberSelect({
   members,
   value,
   onChange,
+  placeholder,
+  accessibilityLabel,
   currentUserId,
   disabled,
-}: PayerSelectProps) {
+}: MemberSelectProps) {
   const insets = useSafeAreaInsets();
 
   const selected = members.find((member) => member.id === value);
@@ -47,8 +51,11 @@ export function PayerSelect({
         if (option) onChange(option.value);
       }}
     >
-      <SelectTrigger disabled={disabled} accessibilityLabel="Paid by">
-        <SelectValue placeholder="Who paid?" />
+      <SelectTrigger
+        disabled={disabled}
+        accessibilityLabel={accessibilityLabel}
+      >
+        <SelectValue placeholder={placeholder} />
       </SelectTrigger>
 
       <SelectContent
