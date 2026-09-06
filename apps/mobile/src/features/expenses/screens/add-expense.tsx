@@ -138,25 +138,25 @@ export function AddExpense() {
       <BodyScrollView contentContainerClassName="gap-6">
         <FieldGroup>
           <Field className="gap-1">
-            <FieldLabel>Description</FieldLabel>
-            <Input
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Dinner"
-              autoFocus
-              maxLength={100}
-            />
-          </Field>
-
-          <Field className="gap-1">
             <FieldLabel>Amount</FieldLabel>
             <AmountInput
               valueMinor={totalMinor}
               onChangeMinor={setTotalMinor}
               currency={currency}
               accessibilityLabel="Amount"
+              autoFocus
             />
             {preview && <FieldDescription>{preview}</FieldDescription>}
+          </Field>
+
+          <Field className="gap-1">
+            <FieldLabel>Description</FieldLabel>
+            <Input
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Dinner"
+              maxLength={100}
+            />
           </Field>
 
           <Field className="gap-1">

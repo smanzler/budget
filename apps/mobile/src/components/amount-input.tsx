@@ -52,7 +52,7 @@ export function AmountInput({
         keyboardType="number-pad"
         autoFocus={autoFocus}
         accessibilityLabel={accessibilityLabel}
-        className="text-right text-transparent"
+        className="text-right text-transparent h-18 text-4xl"
       />
 
       {/*
@@ -67,7 +67,7 @@ export function AmountInput({
       >
         <Text
           className={cn(
-            "text-base leading-5",
+            "text-4xl font-bold",
             isEmpty && "text-muted-foreground/50",
           )}
         >

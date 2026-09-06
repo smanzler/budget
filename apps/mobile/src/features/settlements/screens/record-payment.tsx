@@ -117,6 +117,18 @@ export function RecordPayment() {
         ) : (
           <>
             <FieldGroup>
+              <Field className="gap-1">
+                <FieldLabel>Amount</FieldLabel>
+                <AmountInput
+                  valueMinor={amountMinor}
+                  onChangeMinor={setAmountMinor}
+                  currency={currency}
+                  accessibilityLabel="Amount"
+                  autoFocus
+                />
+                {amount > 0 && <FieldDescription>{preview}</FieldDescription>}
+              </Field>
+
               <Field className="gap-2">
                 <FieldLabel>Direction</FieldLabel>
                 <DirectionToggle
@@ -140,17 +152,6 @@ export function RecordPayment() {
                   }
                   disabled={createSettlement.isPending}
                 />
-              </Field>
-
-              <Field className="gap-1">
-                <FieldLabel>Amount</FieldLabel>
-                <AmountInput
-                  valueMinor={amountMinor}
-                  onChangeMinor={setAmountMinor}
-                  currency={currency}
-                  accessibilityLabel="Amount"
-                />
-                {amount > 0 && <FieldDescription>{preview}</FieldDescription>}
               </Field>
             </FieldGroup>
 
