@@ -1,13 +1,5 @@
 import { RefetchScroll } from "@/components/refetch-scroll";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { Icon } from "@/components/ui/icon";
-import {
   Section,
   SectionContent,
   SectionItem,
@@ -24,8 +16,8 @@ import { authClient } from "@/lib/auth-client";
 import { useTRPC } from "@/lib/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
-import { TriangleAlert } from "lucide-react-native";
 import { View } from "react-native";
+import { GroupError } from "../components/group-error";
 import { InviteButton } from "../components/invite-button";
 import { LeaveGroupDialog } from "../components/leave-group-dialog";
 import { MemberBalance } from "../components/member-balance";
@@ -53,17 +45,7 @@ export function GroupSettings() {
         </View>
       }
       isEmpty={!!error}
-      empty={
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <Icon as={TriangleAlert} />
-            </EmptyMedia>
-            <EmptyTitle>Can&apos;t open this group</EmptyTitle>
-            <EmptyDescription>{error?.message}</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      }
+      empty={<GroupError message={error?.message} />}
     >
       {group && (
         <>

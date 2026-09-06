@@ -9,7 +9,7 @@ export const BodyScrollView = (props: ScrollViewProps) => {
       automaticallyAdjustsScrollIndicatorInsets
       contentInsetAdjustmentBehavior="automatic"
       contentContainerClassName={cn(
-        "m-4 gap-3",
+        "m-4 gap-6",
         Platform.OS === "android" ? "pb-safe-offset-8" : "pb-4",
         props.contentContainerClassName,
       )}

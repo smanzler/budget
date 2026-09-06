@@ -8,10 +8,17 @@ import {
   SectionTitle,
 } from "@/components/section";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Text } from "@/components/ui/text";
+import { formatAmount } from "@/lib/money";
 import { useTRPC } from "@/lib/trpc";
 import { formatDate } from "@/lib/utils";
-import { formatAmount } from "@/lib/money";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "expo-router";
 import { View } from "react-native";
@@ -19,6 +26,7 @@ import { View } from "react-native";
 type ExpenseListProps = {
   groupId: string;
   currency: string;
+  limit?: number;
 };
 
 function summaryLine(
@@ -39,7 +47,12 @@ function summaryLine(
   return `${payer} ${formatAmount(expense.totalMinor, currency)} · ${ways}`;
 }
 
-export function ExpenseList({ groupId, currency }: ExpenseListProps) {
+/**
+ * The expenses of the group. With a `limit` it is a card that shows the newest
+ * few and links to the full list. Without one it is the full list, which takes
+ * its heading from the screen.
+ */
+export function ExpenseList({ groupId, currency, limit }: ExpenseListProps) {
   const trpc = useTRPC();
 
   const { data: expenses } = useQuery(
@@ -48,30 +61,43 @@ export function ExpenseList({ groupId, currency }: ExpenseListProps) {
 
   return (
     <Section>
-      <SectionHeader className="flex-row items-center justify-between">
-        <SectionTitle>Expenses</SectionTitle>
-        <Link
-          href={{
-            pathname: "/groups/[groupId]/expenses/new",
-            params: { groupId },
-          }}
-          asChild
-        >
-          <Button variant="outline" size="sm">
-            <Text>Add expense</Text>
-          </Button>
-        </Link>
-      </SectionHeader>
+      {limit !== undefined && (
+        <SectionHeader>
+          <SectionTitle>Expenses</SectionTitle>
+        </SectionHeader>
+      )}
 
       {/* Keep the empty card off the screen while the query runs. */}
       {expenses !== undefined &&
         (expenses.length === 0 ? (
-          <Text className="text-muted-foreground text-sm">
-            Nothing yet. Add the first shared cost.
-          </Text>
+          <SectionContent>
+            <SectionItem className="h-auto">
+              <Empty className="my-6">
+                <EmptyHeader>
+                  <EmptyTitle>Nothing yet</EmptyTitle>
+                  <EmptyDescription>
+                    Add the first shared cost.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Link
+                    href={{
+                      pathname: "/groups/[groupId]/expenses/new",
+                      params: { groupId },
+                    }}
+                    asChild
+                  >
+                    <Button>
+                      <Text>Add expense</Text>
+                    </Button>
+                  </Link>
+                </EmptyContent>
+              </Empty>
+            </SectionItem>
+          </SectionContent>
         ) : (
           <SectionContent>
-            {expenses.map((expense) => (
+            {expenses.slice(0, limit).map((expense) => (
               <SectionItem key={expense.id} className="h-auto py-2">
                 <View className="flex-1 gap-0.5">
                   <SectionItemTitle>{expense.description}</SectionItemTitle>
@@ -93,6 +119,32 @@ export function ExpenseList({ groupId, currency }: ExpenseListProps) {
                 </SectionItemContent>
               </SectionItem>
             ))}
+            {limit !== undefined && expenses.length > limit && (
+              <Link
+                href={{
+                  pathname: "/groups/[groupId]/expenses",
+                  params: { groupId },
+                }}
+                asChild
+              >
+                <SectionItem>
+                  <SectionItemTitle>See all expenses</SectionItemTitle>
+                  <SectionItemContent />
+                </SectionItem>
+              </Link>
+            )}
+            <Link
+              href={{
+                pathname: "/groups/[groupId]/expenses/new",
+                params: { groupId },
+              }}
+              asChild
+            >
+              <SectionItem>
+                <SectionItemTitle>Add expense</SectionItemTitle>
+                <SectionItemContent />
+              </SectionItem>
+            </Link>
           </SectionContent>
         ))}
     </Section>

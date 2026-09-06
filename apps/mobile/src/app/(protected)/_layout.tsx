@@ -57,11 +57,19 @@ export default function Layout() {
           options={{ title: "Group" }}
         />
         <Stack.Screen
+          name="groups/[groupId]/expenses/index"
+          options={{ title: "Expenses" }}
+        />
+        <Stack.Screen
           name="groups/[groupId]/expenses/new"
           options={{ title: "Add expense" }}
         />
         <Stack.Screen
-          name="groups/[groupId]/settle"
+          name="groups/[groupId]/payments/index"
+          options={{ title: "Payments" }}
+        />
+        <Stack.Screen
+          name="groups/[groupId]/payments/new"
           options={{ title: "Record a payment" }}
         />
         <Stack.Screen

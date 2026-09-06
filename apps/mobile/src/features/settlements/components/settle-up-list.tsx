@@ -53,7 +53,7 @@ export function SettleUpList({
             <Link
               key={`${payment.fromUserId}-${payment.toUserId}`}
               href={{
-                pathname: "/groups/[groupId]/settle",
+                pathname: "/groups/[groupId]/payments/new",
                 params: {
                   groupId,
                   withUserId: otherId,

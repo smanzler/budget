@@ -8,6 +8,13 @@ import {
   SectionTitle,
 } from "@/components/section";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Text } from "@/components/ui/text";
 import { formatAmount } from "@/lib/money";
 import { useTRPC } from "@/lib/trpc";
@@ -20,6 +27,7 @@ type PaymentListProps = {
   groupId: string;
   currency: string;
   currentUserId?: string;
+  limit?: number;
 };
 
 function summaryLine(
@@ -35,10 +43,16 @@ function summaryLine(
   return `${payer} paid ${receiver}`;
 }
 
+/**
+ * The payments inside the group. With a `limit` it is a card that shows the
+ * newest few and links to the full list. Without one it is the full list, which
+ * takes its heading from the screen.
+ */
 export function PaymentList({
   groupId,
   currency,
   currentUserId,
+  limit,
 }: PaymentListProps) {
   const trpc = useTRPC();
 
@@ -48,43 +62,87 @@ export function PaymentList({
 
   return (
     <Section>
-      <SectionHeader className="flex-row items-center justify-between">
-        <SectionTitle>Payments</SectionTitle>
-        <Link
-          href={{ pathname: "/groups/[groupId]/settle", params: { groupId } }}
-          asChild
-        >
-          <Button variant="outline" size="sm">
-            <Text>Record a payment</Text>
-          </Button>
-        </Link>
-      </SectionHeader>
+      {limit !== undefined && (
+        <SectionHeader>
+          <SectionTitle>Payments</SectionTitle>
+        </SectionHeader>
+      )}
 
       {/* Keep the empty card off the screen while the query runs. */}
       {payments !== undefined &&
         (payments.length === 0 ? (
-          <Text className="text-muted-foreground text-sm">
-            Nothing yet. Record a payment once someone pays someone back.
-          </Text>
+          <SectionContent>
+            <SectionItem className="h-auto">
+              <Empty className="my-6">
+                <EmptyHeader>
+                  <EmptyTitle>Nothing yet</EmptyTitle>
+                  <EmptyDescription>
+                    Record a payment once someone pays someone back.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Link
+                    href={{
+                      pathname: "/groups/[groupId]/payments/new",
+                      params: { groupId },
+                    }}
+                    asChild
+                  >
+                    <Button>
+                      <Text>Record a payment</Text>
+                    </Button>
+                  </Link>
+                </EmptyContent>
+              </Empty>
+            </SectionItem>
+          </SectionContent>
         ) : (
           <SectionContent>
-            {payments.map((payment) => (
+            {payments.slice(0, limit).map((payment) => (
               <SectionItem key={payment.id} className="h-auto py-2">
                 <View className="flex-1 gap-0.5">
                   <SectionItemTitle>
                     {summaryLine(payment, currentUserId)}
                   </SectionItemTitle>
-                  <Text className="text-muted-foreground text-xs">
-                    {formatDate(payment.settledAt)}
-                  </Text>
                 </View>
                 <SectionItemContent>
-                  <Text className="text-sm font-medium">
-                    {formatAmount(payment.amountMinor, currency)}
-                  </Text>
+                  <View className="items-end gap-0.5">
+                    <Text className="text-sm font-medium">
+                      {formatAmount(payment.amountMinor, currency)}
+                    </Text>
+                    <Text className="text-muted-foreground text-xs">
+                      {formatDate(payment.settledAt)}
+                    </Text>
+                  </View>
                 </SectionItemContent>
               </SectionItem>
             ))}
+            {limit !== undefined && payments.length > limit && (
+              <Link
+                href={{
+                  pathname: "/groups/[groupId]/payments",
+                  params: { groupId },
+                }}
+                asChild
+              >
+                <SectionItem>
+                  <SectionItemTitle>See all payments</SectionItemTitle>
+                  <SectionItemContent />
+                </SectionItem>
+              </Link>
+            )}
+            <Link
+              href={{
+                pathname: "/groups/[groupId]/payments/new",
+                params: { groupId },
+              }}
+              asChild
+            >
+              <SectionItem>
+                <SectionItemTitle>Record a payment</SectionItemTitle>
+                <SectionItemContent />
+              </SectionItem>
+            </Link>
           </SectionContent>
         ))}
     </Section>

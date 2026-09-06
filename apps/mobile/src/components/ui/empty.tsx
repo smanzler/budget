@@ -21,7 +21,7 @@ function EmptyHeader({ className, ...props }: ViewProps) {
   return (
     <View
       data-slot="empty-header"
-      className={cn("flex max-w-sm flex-col items-center gap-2", className)}
+      className={cn("flex max-w-sm flex-col items-center gap-1", className)}
       {...props}
     />
   );
