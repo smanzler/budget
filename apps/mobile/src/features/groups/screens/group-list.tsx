@@ -22,7 +22,7 @@ import { formatAmount } from "@/lib/money";
 import { useTRPC } from "@/lib/trpc";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "expo-router";
-import { Users } from "lucide-react-native";
+import { Ticket, Users } from "lucide-react-native";
 import { View } from "react-native";
 import { balanceToneClass } from "../balance";
 
@@ -110,14 +110,14 @@ export function GroupList() {
               </SectionItem>
             </Link>
           ))}
+          <Link href="/groups/join" asChild>
+            <SectionItem className="justify-center">
+              <Icon as={Ticket} />
+              <SectionItemTitle>Join with a code</SectionItemTitle>
+            </SectionItem>
+          </Link>
         </SectionContent>
       </Section>
-
-      <Link href="/groups/join" asChild>
-        <Button variant="outline">
-          <Text>Join with a code</Text>
-        </Button>
-      </Link>
     </RefetchScroll>
   );
 }
