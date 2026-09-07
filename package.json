@@ -10,7 +10,8 @@
     "format": "pnpm -r format",
     "check": "pnpm -r check",
     "typecheck": "pnpm -r typecheck",
-    "dev": "./dev.sh"
+    "dev": "./dev.sh",
+    "down": "./down.sh"
   },
   "lint-staged": {
     "apps/mobile/**/*.{js,jsx,ts,tsx}": "pnpm --filter @settle/mobile exec eslint --fix",
